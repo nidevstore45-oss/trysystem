@@ -1208,10 +1208,7 @@ function NotificationBell({ session, onOpenCenter }: any) {
   useEffect(() => {
     load();
     if (!session?.user?.id) return;
-    const channel = supabase.channel(`notification-bell-${session.user.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "app_notifications" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "notification_reads", filter: `user_id=eq.${session.user.id}` }, load)
-      .subscribe();
+   
     return () => { supabase.removeChannel(channel); };
   }, [session?.user?.id, load]);
   const markRead = async (id: any) => {

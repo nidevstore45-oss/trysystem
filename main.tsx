@@ -4,151 +4,495 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 /** 1. CONFIG **/
-type AppLanguage = "id" | "cn";
-
-const DEFAULT_SUPABASE_URL = "https://bliaixvdfwaxdlfhayea.supabase.co";
-const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJsaWFpeHZkZndheGRsZmhheWVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwMDc5OTQsImV4cCI6MjA5OTU4Mzk5NH0.PcqkFrETAtI0JGYinhRKKcmd2qMb2wh6nNQI4sTIG_8";
-const runtimeEnv = (((import.meta as any)?.env || {}) as Record<string, string | undefined>);
-const SUPABASE_URL = runtimeEnv.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
-const SUPABASE_KEY = runtimeEnv.VITE_SUPABASE_ANON_KEY || runtimeEnv.VITE_SUPABASE_PUBLISHABLE_KEY || DEFAULT_SUPABASE_KEY;
-
+const SUPABASE_URL =
+  (import.meta as any).env?.VITE_SUPABASE_URL ||
+  "https://npkgrgiypzkwytmtxgpk.supabase.co";
+const SUPABASE_KEY =
+  (import.meta as any).env?.VITE_SUPABASE_ANON_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wa2dyZ2l5cHprd3l0bXR4Z3BrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzMDcwMzgsImV4cCI6MjA4Nzg4MzAzOH0.C44YWp5Lclm2F4BkD1zM6W1aiX8Mgtc6Nq5eWniZDY8";
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true
-  }
+    detectSessionInUrl: true,
+    ...(typeof window !== "undefined"
+      ? {
+          storage: window.sessionStorage,
+        }
+      : {}),
+    storageKey: "buymore-auth-per-tab",
+  },
 });
 
-const resolveLanguage = (value: unknown): AppLanguage => value === "cn" ? "cn" : "id";
-const appLocale = (language: AppLanguage) => language === "cn" ? "zh-CN" : "id-ID";
-const appUnit = (language: AppLanguage) => language === "cn" ? "件" : "Pcs";
-const formatAppNumber = (value: unknown, language: AppLanguage, options?: Intl.NumberFormatOptions) => {
-  const parsed = Number(value);
-  return (Number.isFinite(parsed) ? parsed : 0).toLocaleString(appLocale(language), options);
-};
-const formatAppDateTime = (value: unknown, language: AppLanguage, options?: Intl.DateTimeFormatOptions) => {
-  const date = new Date(String(value || ""));
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleString(appLocale(language), options);
-};
-const translateShift = (value: unknown, language: AppLanguage) => {
-  const shift = String(value || "").trim();
-  if (shift === "Siang") return language === "cn" ? "白班" : "Siang";
-  if (shift === "Malam") return language === "cn" ? "夜班" : "Malam";
-  return shift || "-";
-};
+/** PWA HEAD FALLBACK — tidak memerlukan perubahan manual pada index.html **/
+if (typeof document !== "undefined") {
+  if (!document.querySelector('link[rel="manifest"]')) {
+    const manifest = document.createElement("link");
+    manifest.rel = "manifest";
+    manifest.href = "/manifest.webmanifest";
+    document.head.appendChild(manifest);
+  }
+  if (!document.querySelector('meta[name="theme-color"]')) {
+    const theme = document.createElement("meta");
+    theme.name = "theme-color";
+    theme.content = "#2563eb";
+    document.head.appendChild(theme);
+  }
+}
 
-const localizeSupabaseError = (error: any, language: AppLanguage, fallback: string) => {
-  const message = String(error?.message || "").trim();
-  const normalized = message.toLowerCase();
-  const translated = language === "cn" ? {
-    invalidLogin: "邮箱或密码不正确。",
-    emailNotConfirmed: "邮箱尚未验证。",
-    network: "无法连接服务器，请检查网络。",
-    duplicate: "该数据已存在，无法重复保存。",
-    denied: "当前账户没有执行此操作的权限。",
-    session: "登录会话已过期，请重新登录。"
-  } : {
-    invalidLogin: "Email atau kata sandi tidak benar.",
-    emailNotConfirmed: "Email belum diverifikasi.",
-    network: "Tidak dapat terhubung ke server. Periksa koneksi internet.",
-    duplicate: "Data tersebut sudah ada dan tidak dapat disimpan dua kali.",
-    denied: "Akun ini tidak memiliki izin untuk melakukan tindakan tersebut.",
-    session: "Sesi login telah berakhir. Silakan masuk kembali."
+/** GLOBAL BILINGUAL RUNTIME (INDONESIA / 简体中文) **/
+type AppLanguage = "id" | "cn";
+const normalizeLanguage = (value: any): AppLanguage =>
+  value === "cn" ? "cn" : "id";
+let activeLanguage: AppLanguage = normalizeLanguage(
+  typeof window !== "undefined"
+    ? window.localStorage.getItem("app_lang")
+    : "id",
+);
+const setActiveLanguage = (language: any) => {
+  activeLanguage = normalizeLanguage(language);
+};
+const bi = (indonesian: string, chinese: string, language = activeLanguage) =>
+  normalizeLanguage(language) === "cn" ? chinese : indonesian;
+const appLocale = (language = activeLanguage) =>
+  normalizeLanguage(language) === "cn" ? "zh-CN" : "id-ID";
+const formatNumber = (
+  value: any,
+  options?: Intl.NumberFormatOptions,
+  language = activeLanguage,
+) => {
+  const number = Number(value);
+  return (Number.isFinite(number) ? number : 0).toLocaleString(
+    appLocale(language),
+    options,
+  );
+};
+const formatPercent = (value: any, maximumFractionDigits = 1) =>
+  `${formatNumber(value, {
+    maximumFractionDigits,
+  })}%`;
+const unitLabel = (language = activeLanguage) =>
+  normalizeLanguage(language) === "cn" ? "件" : "Pcs";
+const shiftLabel = (value: any, language = activeLanguage) => {
+  const normalized = String(value ?? "").trim();
+  if (normalized === "Siang") return bi("Siang", "白班", language);
+  if (normalized === "Malam") return bi("Malam", "夜班", language);
+  if (normalized === "Semua") return bi("Semua", "全部", language);
+  return normalized || "-";
+};
+const roleLabel = (value: any, language = activeLanguage) => {
+  const labels: Record<string, [string, string]> = {
+    admin: ["Admin", "管理员"],
+    supervisor: ["Supervisor", "主管"],
+    operator: ["Operator", "操作员"],
+    qc: ["Quality Control", "质量控制"],
+    viewer: ["Viewer", "只读用户"],
+    auditor: ["Auditor", "审计员"],
   };
-
-  if (normalized.includes("invalid login credentials")) return translated.invalidLogin;
-  if (normalized.includes("email not confirmed")) return translated.emailNotConfirmed;
-  if (normalized.includes("failed to fetch") || normalized.includes("network")) return translated.network;
-  if (normalized.includes("duplicate key") || normalized.includes("already exists")) return translated.duplicate;
-  if (normalized.includes("row-level security") || normalized.includes("permission denied") || normalized.includes("not allowed")) return translated.denied;
-  if (normalized.includes("jwt") || normalized.includes("session") && normalized.includes("expired")) return translated.session;
-  return message ? `${fallback} (${message})` : fallback;
+  const label = labels[String(value || "").toLowerCase()];
+  return label ? bi(label[0], label[1], language) : String(value || "-");
 };
-
-type ActivityLogRecord = {
-  id: string | number;
-  user_name?: string | null;
-  activity_type?: string | null;
-  description?: string | null;
-  description_id?: string | null;
-  description_zh?: string | null;
-  record_id?: string | number | null;
-  old_data?: Record<string, any> | null;
-  new_data?: Record<string, any> | null;
-  created_at?: string | null;
+const statusLabel = (value: any, language = activeLanguage) => {
+  const normalized = String(value ?? "")
+    .trim()
+    .toUpperCase();
+  const labels: Record<string, [string, string]> = {
+    ACTIVE: ["Aktif", "启用"],
+    INACTIVE: ["Nonaktif", "停用"],
+    AKTIF: ["Aktif", "启用"],
+    NONAKTIF: ["Nonaktif", "停用"],
+    PLANNED: ["Direncanakan", "已计划"],
+    IN_PROGRESS: ["Sedang Berjalan", "进行中"],
+    PAUSED: ["Dijeda", "已暂停"],
+    COMPLETED: ["Selesai", "已完成"],
+    CANCELLED: ["Dibatalkan", "已取消"],
+    OPEN: ["Terbuka", "待处理"],
+    SUBMITTED: ["Diajukan", "已提交"],
+    REVIEWED: ["Ditinjau", "已审核"],
+    CLOSED: ["Ditutup", "已关闭"],
+    REOPENED: ["Dibuka Kembali", "已重新开启"],
+    PENDING: ["Menunggu", "待审批"],
+    APPROVED: ["Disetujui", "已批准"],
+    REJECTED: ["Ditolak", "已拒绝"],
+    CONFLICT: ["Konflik", "冲突"],
+    SUCCESS: ["Berhasil", "成功"],
+    RUNNING: ["Diproses", "处理中"],
+    FAILED: ["Gagal", "失败"],
+    QUEUED: ["Dalam Antrean", "已排队"],
+    SKIPPED: ["Dilewati", "已跳过"],
+    VERIFIED: ["Terverifikasi", "已验证"],
+    UNVERIFIED: ["Belum Terverifikasi", "未验证"],
+    INVESTIGATING: ["Dalam Investigasi", "调查中"],
+    EXPIRED: ["Kedaluwarsa", "已过期"],
+    USED: ["Sudah Digunakan", "已使用"],
+    REVOKED: ["Dicabut", "已撤销"],
+    RESTORED: ["Dipulihkan", "已恢复"],
+    PURGED: ["Dihapus Permanen", "已永久删除"],
+    DELETED: ["Dihapus", "已删除"],
+    UPDATED: ["Diperbarui", "已更新"],
+    INSERT: ["Tambah", "新增"],
+    UPDATE: ["Ubah", "更新"],
+    DELETE: ["Hapus", "删除"],
+    SOFT_DELETE: ["Masuk Trash", "移至回收站"],
+    RESTORE: ["Pulihkan", "恢复"],
+    UPDATE_NOTE: ["Ubah Catatan", "修改备注"],
+    TERCAPAI: ["Tercapai", "已达成"],
+    "BELUM MULAI": ["Belum Mulai", "尚未开始"],
+    "ON TRACK": ["Sesuai Rencana", "进度正常"],
+    TERTINGGAL: ["Tertinggal", "进度落后"],
+  };
+  const label = labels[normalized];
+  return label ? bi(label[0], label[1], language) : String(value || "-");
 };
-
-const legacyDescriptionToChinese = (description: string) => {
-  const insertMatch = description.match(/^Menambah data produksi baru:\s*(.*?)\s+sebanyak\s+([\d.,]+)\s+Pcs\s+\(Warna:\s*(.*?)\)(?:\s+\(ID Data:\s*(.*?)\))?$/i);
-  if (insertMatch) return `新增生产数据：${insertMatch[1]}，数量 ${insertMatch[2]} 件（颜色：${insertMatch[3] || "-"}）${insertMatch[4] ? `（数据 ID：${insertMatch[4]}）` : ""}`;
-
-  const deleteMatch = description.match(/^Menghapus data produksi:\s*(.*?)(?:\s+\(ID Data:\s*(.*?)\))?$/i);
-  if (deleteMatch) return `删除生产数据：${deleteMatch[1]}${deleteMatch[2] ? `（数据 ID：${deleteMatch[2]}）` : ""}`;
-
-  const updateMatch = description.match(/^Mengubah catatan produk\s+(.*?)\s+dari\s+"(.*?)"\s+menjadi\s+"(.*?)"(?:\s+\(ID Data:\s*(.*?)\))?$/i);
-  if (updateMatch) return `将产品 ${updateMatch[1]} 的备注从“${updateMatch[2]}”修改为“${updateMatch[3]}”${updateMatch[4] ? `（数据 ID：${updateMatch[4]}）` : ""}`;
-
-  const genericUpdateMatch = description.match(/^Memperbarui data produksi:\s*(.*)$/i);
-  if (genericUpdateMatch) return `更新生产数据：${genericUpdateMatch[1]}`;
+const activityLabel = (value: any, language = activeLanguage) =>
+  statusLabel(value, language);
+const categoryLabel = (value: any, language = activeLanguage) => {
+  const labels: Record<string, [string, string]> = {
+    PRODUCT: ["Produk", "产品"],
+    COLOR: ["Warna", "颜色"],
+    SHIFT: ["Shift", "班次"],
+    OPERATOR: ["Operator", "操作员"],
+    MACHINE: ["Mesin", "机器"],
+    LINE: ["Line", "产线"],
+    DEFECT_TYPE: ["Jenis Cacat", "缺陷类型"],
+    CUSTOMER: ["Pelanggan", "客户"],
+  };
+  const label = labels[String(value || "").toUpperCase()];
+  return label ? bi(label[0], label[1], language) : String(value || "-");
+};
+const frequencyLabel = (value: any, language = activeLanguage) => {
+  const labels: Record<string, [string, string]> = {
+    DAILY: ["Harian", "每日"],
+    WEEKLY: ["Mingguan", "每周"],
+    MONTHLY: ["Bulanan", "每月"],
+  };
+  const label = labels[String(value || "").toUpperCase()];
+  return label ? bi(label[0], label[1], language) : String(value || "-");
+};
+const channelLabel = (value: any, language = activeLanguage) => {
+  const labels: Record<string, [string, string]> = {
+    ARCHIVE: ["Arsip Database", "数据库归档"],
+    EMAIL: ["Email melalui Webhook", "通过 Webhook 发送邮件"],
+    WEBHOOK: ["Webhook", "Webhook"],
+    TELEGRAM: ["Telegram melalui Webhook", "通过 Webhook 发送 Telegram"],
+    WHATSAPP: ["WhatsApp melalui Webhook", "通过 Webhook 发送 WhatsApp"],
+  };
+  const label = labels[String(value || "").toUpperCase()];
+  return label ? bi(label[0], label[1], language) : String(value || "-");
+};
+const entityTypeLabel = (value: any, language = activeLanguage) => {
+  const labels: Record<string, [string, string]> = {
+    production: ["Produksi", "生产"],
+    quality: ["Quality Control", "质量控制"],
+    work_order: ["Work Order", "工单"],
+    batch: ["Batch", "批次"],
+    shift_closure: ["Penutupan Shift", "班次结算"],
+    change_request: ["Permintaan Perubahan", "变更申请"],
+  };
+  const label = labels[String(value || "").toLowerCase()];
+  return label ? bi(label[0], label[1], language) : String(value || "-");
+};
+const sourceLabel = (value: any, language = activeLanguage) => {
+  const labels: Record<string, [string, string]> = {
+    MANUAL: ["Manual", "手动"],
+    BARCODE: ["Barcode", "条码"],
+    IMPORT: ["Impor", "导入"],
+    OFFLINE_SYNC: ["Sinkronisasi Offline", "离线同步"],
+  };
+  const label = labels[String(value || "").toUpperCase()];
+  return label ? bi(label[0], label[1], language) : String(value || "-");
+};
+const loginEventLabel = (value: any, language = activeLanguage) => {
+  const labels: Record<string, [string, string]> = {
+    INITIAL_SESSION: ["Sesi Awal", "初始会话"],
+    SIGNED_IN: ["Masuk", "登录"],
+    SIGNED_OUT: ["Keluar", "退出"],
+    TOKEN_REFRESHED: ["Token Diperbarui", "令牌已刷新"],
+    USER_UPDATED: ["Pengguna Diperbarui", "用户已更新"],
+    PASSWORD_RECOVERY: ["Pemulihan Password", "密码恢复"],
+    MFA_CHALLENGE_VERIFIED: ["MFA Terverifikasi", "MFA 已验证"],
+  };
+  const label = labels[String(value || "").toUpperCase()];
+  return label ? bi(label[0], label[1], language) : String(value || "-");
+};
+const settingDescription = (
+  key: any,
+  fallback: any,
+  language = activeLanguage,
+) => {
+  const labels: Record<string, [string, string]> = {
+    enforce_change_approval: [
+      "Operator harus meminta persetujuan untuk perubahan catatan dan penghapusan.",
+      "操作员修改备注或删除数据时必须提交审批。",
+    ],
+    enable_soft_delete: [
+      "Penghapusan Produksi dipindahkan ke Trash sebelum dihapus permanen.",
+      "生产数据先移至回收站，再进行永久删除。",
+    ],
+    enable_duplicate_check: [
+      "Aplikasi memeriksa kemungkinan input Produksi ganda.",
+      "应用会检查可能重复的生产录入。",
+    ],
+    duplicate_window_minutes: [
+      "Jendela waktu deteksi duplikat dalam menit.",
+      "重复检测时间窗口（分钟）。",
+    ],
+    require_manager_mfa: [
+      "Admin dan Supervisor wajib menggunakan AAL2 untuk operasi sensitif.",
+      "管理员和主管执行敏感操作时必须达到 AAL2。",
+    ],
+    restrict_viewer_export: [
+      "Role Viewer tidak diperbolehkan mengekspor data.",
+      "只读用户不允许导出数据。",
+    ],
+    enable_scheduled_reports: [
+      "Mengaktifkan pemrosesan laporan terjadwal oleh database.",
+      "启用数据库自动处理定时报告。",
+    ],
+    require_invitation_signup: [
+      "Akun baru harus dibuat melalui undangan resmi.",
+      "新账户必须通过正式邀请创建。",
+    ],
+    timezone: ["Zona waktu operasional aplikasi.", "应用运行时区。"],
+  };
+  const label = labels[String(key || "")];
+  return label ? bi(label[0], label[1], language) : String(fallback || "-");
+};
+const reportMessage = (run: any, language = activeLanguage) => {
+  if (normalizeLanguage(language) === "cn")
+    return (
+      run?.message_zh ||
+      run?.error_message_zh ||
+      run?.delivery_response_zh ||
+      run?.error_message ||
+      run?.delivery_response ||
+      "-"
+    );
+  return (
+    run?.message_id ||
+    run?.error_message_id ||
+    run?.delivery_response_id ||
+    run?.error_message ||
+    run?.delivery_response ||
+    "-"
+  );
+};
+const fieldLabel = (value: any, language = activeLanguage) => {
+  const labels: Record<string, [string, string]> = {
+    id: ["ID", "ID"],
+    production_id: ["ID Produksi", "生产 ID"],
+    inspection_date: ["Tanggal Pemeriksaan", "检验日期"],
+    shift: ["Shift", "班次"],
+    product: ["Produk", "产品"],
+    inspected_quantity: ["Jumlah Diperiksa", "检验数量"],
+    good_quantity: ["Jumlah Baik", "良品数量"],
+    reject_quantity: ["Jumlah Reject", "不良数量"],
+    rework_quantity: ["Jumlah Rework", "返工数量"],
+    defect_type: ["Jenis Cacat", "缺陷类型"],
+    defect_cause: ["Penyebab Cacat", "缺陷原因"],
+    corrective_action: ["Tindakan Perbaikan", "纠正措施"],
+    note: ["Catatan", "备注"],
+    status: ["Status", "状态"],
+    created_by: ["Dibuat Oleh", "创建人"],
+    created_at: ["Dibuat Pada", "创建时间"],
+    updated_at: ["Diperbarui Pada", "更新时间"],
+    resolved_by: ["Diselesaikan Oleh", "处理人"],
+    resolved_at: ["Diselesaikan Pada", "处理时间"],
+    date: ["Tanggal", "日期"],
+    time: ["Waktu", "时间"],
+    color: ["Warna", "颜色"],
+    quantity: ["Quantity", "数量"],
+    version: ["Versi", "版本"],
+    work_order_id: ["Work Order", "工单"],
+    batch_id: ["Batch", "批次"],
+    machine_code: ["Mesin", "机器"],
+    line_code: ["Line", "产线"],
+    source: ["Sumber", "来源"],
+    deleted_at: ["Dihapus Pada", "删除时间"],
+    deleted_by: ["Dihapus Oleh", "删除人"],
+    metadata: ["Metadata", "元数据"],
+    code: ["Kode", "代码"],
+    customer: ["Pelanggan", "客户"],
+    target_quantity: ["Target Quantity", "目标数量"],
+    planned_quantity: ["Rencana Quantity", "计划数量"],
+    planned_start: ["Tanggal Mulai", "开始日期"],
+    planned_end: ["Tanggal Selesai", "结束日期"],
+    completed_at: ["Selesai Pada", "完成时间"],
+    batch_code: ["Kode Batch", "批次代码"],
+    request_type: ["Jenis Permintaan", "申请类型"],
+    requested_changes: ["Perubahan Diminta", "申请变更"],
+    old_data: ["Data Lama", "旧数据"],
+    reason: ["Alasan", "原因"],
+    review_note: ["Catatan Review", "审核备注"],
+    reviewed_at: ["Direview Pada", "审核时间"],
+    name: ["Nama", "名称"],
+    frequency: ["Frekuensi", "频率"],
+    local_time: ["Waktu Lokal", "本地时间"],
+    channel: ["Channel", "渠道"],
+    recipient: ["Penerima", "接收方"],
+    webhook_url: ["Webhook URL", "Webhook 地址"],
+  };
+  const label = labels[String(value || "")];
+  return label
+    ? bi(label[0], label[1], language)
+    : String(value || "-").replaceAll("_", " ");
+};
+const legacyAuditChinese = (description: string) => {
+  if (!description) return "";
+  let match = description.match(
+    /^Menambah data produksi: (.+?) sebanyak (.+?) Pcs \(Warna: (.+?)\) \(ID Data: (.+?)\)$/,
+  );
+  if (match)
+    return `新增生产数据：${match[1]}，数量 ${match[2]} 件（颜色：${match[3]}，数据 ID：${match[4]}）。`;
+  match = description.match(
+    /^Memindahkan data produksi ke Trash: (.+?) - (.+?) Pcs \(ID Data: (.+?)\)$/,
+  );
+  if (match)
+    return `将生产数据移至回收站：${match[1]} - ${match[2]} 件（数据 ID：${match[3]}）。`;
+  match = description.match(
+    /^Memulihkan data produksi dari Trash: (.+?) - (.+?) Pcs \(ID Data: (.+?)\)$/,
+  );
+  if (match)
+    return `从回收站恢复生产数据：${match[1]} - ${match[2]} 件（数据 ID：${match[3]}）。`;
+  match = description.match(
+    /^Mengubah catatan produk (.+?) dari "(.*?)" menjadi "(.*?)" \(ID Data: (.+?)\)$/,
+  );
+  if (match)
+    return `修改产品 ${match[1]} 的备注：从“${match[2]}”改为“${match[3]}”（数据 ID：${match[4]}）。`;
+  match = description.match(
+    /^Menghapus permanen data produksi: (.+?) - (.+?) Pcs \(ID Data: (.+?)\)$/,
+  );
+  if (match)
+    return `永久删除生产数据：${match[1]} - ${match[2]} 件（数据 ID：${match[3]}）。`;
   return description;
 };
-
-const getActivityDescription = (log: ActivityLogRecord, language: AppLanguage) => {
-  const localized = language === "cn" ? log.description_zh : log.description_id;
-  if (localized && String(localized).trim()) return String(localized).trim();
-
-  const description = String(log.description || "").trim();
-  if (language === "id") return description || "-";
-  if (description) {
-    const translated = legacyDescriptionToChinese(description);
-    if (translated !== description) return translated;
-  }
-
-  const newest = log.new_data || {};
-  const oldest = log.old_data || {};
-  const product = newest.product || oldest.product || "-";
-  const quantity = newest.quantity ?? oldest.quantity ?? 0;
-  const color = newest.color || oldest.color || "-";
-  const recordId = log.record_id ?? newest.id ?? oldest.id ?? "-";
-
-  if (log.activity_type === "INSERT") return `新增生产数据：${product}，数量 ${quantity} 件（颜色：${color}）（数据 ID：${recordId}）`;
-  if (log.activity_type === "DELETE") return `删除生产数据：${product}，数量 ${quantity} 件（数据 ID：${recordId}）`;
-  if (log.activity_type === "UPDATE") {
-    if ((oldest.note ?? "") !== (newest.note ?? "")) return `将产品 ${product} 的备注从“${oldest.note || "-"}”修改为“${newest.note || "-"}”（数据 ID：${recordId}）`;
-    return `更新生产数据：${product}，数量 ${quantity} 件（数据 ID：${recordId}）`;
-  }
-  return description || "-";
+const auditDescription = (log: any, language = activeLanguage) => {
+  if (normalizeLanguage(language) === "cn")
+    return (
+      log?.description_zh ||
+      legacyAuditChinese(log?.description_id || log?.description || "")
+    );
+  return log?.description_id || log?.description || log?.description_zh || "-";
 };
-
-const getActivityTypeLabel = (activityType: unknown, language: AppLanguage) => {
-  const type = String(activityType || "").toUpperCase();
-  if (language === "cn") {
-    if (type === "INSERT") return "新增";
-    if (type === "UPDATE") return "更新";
-    if (type === "DELETE") return "删除";
-  } else {
-    if (type === "INSERT") return "Tambah";
-    if (type === "UPDATE") return "Ubah";
-    if (type === "DELETE") return "Hapus";
+const knownErrorLabels: Record<string, [string, string]> = {
+  AUTH_REQUIRED: ["Sesi login diperlukan.", "需要登录会话。"],
+  ROLE_NOT_ALLOWED: [
+    "Role Anda tidak memiliki izin untuk operasi ini.",
+    "您的角色无权执行此操作。",
+  ],
+  MFA_AAL2_REQUIRED: [
+    "Verifikasi MFA AAL2 diperlukan.",
+    "需要完成 AAL2 多重验证。",
+  ],
+  DATA_NOT_FOUND: [
+    "Data tidak ditemukan atau sudah dihapus.",
+    "数据不存在或已被删除。",
+  ],
+  VERSION_CONFLICT: [
+    "Data telah diubah pengguna lain. Muat ulang lalu coba lagi.",
+    "数据已被其他用户修改，请刷新后重试。",
+  ],
+  INVALID_DECISION: ["Keputusan tidak valid.", "审批决定无效。"],
+  REQUEST_NOT_FOUND: ["Permintaan tidak ditemukan.", "未找到该申请。"],
+  REQUEST_ALREADY_REVIEWED: [
+    "Permintaan ini sudah diproses.",
+    "该申请已处理。",
+  ],
+  TRASH_RECORD_NOT_FOUND: [
+    "Record Trash tidak ditemukan.",
+    "回收站记录不存在。",
+  ],
+  INVALID_SHIFT: ["Shift tidak valid.", "班次无效。"],
+  INVALID_STATUS: ["Status tidak valid.", "状态无效。"],
+  CLOSURE_NOT_FOUND: ["Ringkasan shift tidak ditemukan.", "未找到班次汇总。"],
+  PROFILE_NOT_FOUND: ["Profil pengguna tidak ditemukan.", "未找到用户资料。"],
+  INVALID_ROLE: ["Role tidak valid.", "角色无效。"],
+  ADMIN_CANNOT_DISABLE_OR_DEMOTE_SELF: [
+    "Admin tidak dapat menonaktifkan atau menurunkan role dirinya sendiri.",
+    "管理员不能停用自己或降低自己的角色。",
+  ],
+  LAST_ACTIVE_ADMIN_REQUIRED: [
+    "Minimal satu Admin aktif harus tetap tersedia.",
+    "系统必须至少保留一名启用的管理员。",
+  ],
+  INVITATION_NOT_FOUND: ["Undangan tidak ditemukan.", "未找到邀请。"],
+  INVITATION_EXPIRED: ["Undangan sudah kedaluwarsa.", "邀请已过期。"],
+  INVITATION_ALREADY_USED: ["Undangan sudah digunakan.", "邀请已被使用。"],
+  INVITATION_EMAIL_MISMATCH: [
+    "Email tidak cocok dengan undangan.",
+    "邮箱与邀请不匹配。",
+  ],
+  INVITATION_REVOKED: ["Undangan sudah dicabut.", "邀请已被撤销。"],
+  INVITATION_REQUIRED: [
+    "Pendaftaran hanya dapat dilakukan melalui undangan resmi.",
+    "只能通过正式邀请注册。",
+  ],
+  INVITATION_TOKEN_NOT_RETURNED: [
+    "Token undangan tidak berhasil dibuat.",
+    "未能生成邀请令牌。",
+  ],
+  EMAIL_ALREADY_REGISTERED: [
+    "Email tersebut sudah terdaftar.",
+    "该邮箱已经注册。",
+  ],
+  INVALID_EMAIL: ["Format email tidak valid.", "邮箱格式无效。"],
+  INVALID_EXPIRY: ["Masa berlaku undangan tidak valid.", "邀请有效期无效。"],
+  REPORT_SCHEDULE_NOT_FOUND: [
+    "Jadwal laporan tidak ditemukan.",
+    "未找到报告计划。",
+  ],
+  REPORT_CHANNEL_URL_REQUIRED: [
+    "Webhook URL wajib diisi untuk channel eksternal.",
+    "外部渠道必须填写 Webhook 地址。",
+  ],
+  REPORT_PROCESSING_FAILED: ["Pemrosesan laporan gagal.", "报告处理失败。"],
+};
+const localizeErrorMessage = (message: any, language = activeLanguage) => {
+  const raw = String(message || "").trim();
+  const exact = knownErrorLabels[raw];
+  if (exact) return bi(exact[0], exact[1], language);
+  const matchedKey = Object.keys(knownErrorLabels).find((key) =>
+    raw.includes(key),
+  );
+  if (matchedKey) {
+    const translated = knownErrorLabels[matchedKey];
+    return bi(translated[0], translated[1], language);
   }
-  return type || "-";
+  return raw;
 };
 
 /** 2. STYLED COMPONENTS **/
 const Card = ({ children, className = "" }: any) => (
-  <div className={`bg-white rounded-3xl shadow-[0_10px_40px_rgba(0,0,0,0.03)] border border-slate-100 overflow-hidden ${className}`}>{children}</div>
+  <div
+    className={`bg-white rounded-3xl shadow-[0_10px_40px_rgba(0,0,0,0.03)] border border-slate-100 overflow-hidden ${className}`}
+  >
+    {children}
+  </div>
 );
-
-const Button = ({ children, onClick, variant = "default", className = "", type = "button", disabled = false, ...rest }: any) => {
-  const v: any = { 
-    default: "bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-blue-100 hover:shadow-blue-200 hover:-translate-y-0.5",
-    success: "bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-emerald-100 hover:shadow-emerald-200 hover:-translate-y-0.5",
-    danger: "text-red-500 hover:bg-red-50 hover:text-red-700 font-bold"
+const Button = ({
+  children,
+  onClick,
+  variant = "default",
+  className = "",
+  type = "button",
+  disabled = false,
+  title = "",
+}: any) => {
+  const v: any = {
+    default:
+      "bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-blue-100 hover:shadow-blue-200 hover:-translate-y-0.5",
+    success:
+      "bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-emerald-100 hover:shadow-emerald-200 hover:-translate-y-0.5",
+    danger: "text-red-500 hover:bg-red-50 hover:text-red-700 font-bold",
   };
   return (
-    <button type={type} disabled={disabled} onClick={onClick} {...rest} className={`px-6 py-2.5 rounded-xl font-bold transition-all duration-300 active:scale-95 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 ${v[variant]} ${className}`}>
+    <button
+      type={type}
+      disabled={disabled}
+      title={title}
+      onClick={onClick}
+      className={`px-6 py-2.5 rounded-xl font-bold transition-all duration-300 active:scale-95 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 ${v[variant]} ${className}`}
+    >
       {children}
     </button>
   );
@@ -166,114 +510,198 @@ type AnalyticsRecord = {
   note?: string | null;
   created_by?: string | null;
 };
-
-type AnalyticsSeriesItem = { label: string; value: number };
-
+type AnalyticsSeriesItem = {
+  label: string;
+  value: number;
+};
 const ANALYTICS_BATCH_SIZE = 500;
-
 const analyticsNumber = (value: any) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 };
-
 const analyticsNormalize = (value: any) => String(value || "").trim();
-
 const analyticsDateKey = (value: Date) => {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Jakarta",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(value);
+    const map: Record<string, string> = {};
+    parts.forEach((part) => {
+      map[part.type] = part.value;
+    });
+    return `${map.year}-${map.month}-${map.day}`;
+  } catch {
+    return value.toISOString().slice(0, 10);
+  }
 };
-
-const analyticsGroupByQuantity = (rows: AnalyticsRecord[], field: "product" | "created_by" | "color" | "shift") => {
+const analyticsGroupByQuantity = (
+  rows: AnalyticsRecord[],
+  field: "product" | "created_by" | "color" | "shift",
+) => {
   const grouped = new Map<string, number>();
   rows.forEach((row) => {
     const label = analyticsNormalize(row[field]) || "-";
-    grouped.set(label, (grouped.get(label) || 0) + analyticsNumber(row.quantity));
+    grouped.set(
+      label,
+      (grouped.get(label) || 0) + analyticsNumber(row.quantity),
+    );
   });
   return Array.from(grouped.entries())
-    .map(([label, value]) => ({ label, value }))
+    .map(([label, value]) => ({
+      label,
+      value,
+    }))
     .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
 };
-
-const AnalyticsStatCard = ({ title, value, subtitle, badge, animationKey }: any) => (
-  <Card className="p-5 md:p-6 analytics-stat-card" key={`${title}-${animationKey}`}>
+const AnalyticsStatCard = ({
+  title,
+  value,
+  subtitle,
+  badge,
+  animationKey,
+}: any) => (
+  <Card
+    className="p-5 md:p-6 analytics-stat-card"
+    key={`${title}-${animationKey}`}
+  >
     <div className="flex items-start justify-between gap-4">
       <div className="min-w-0">
-        <p className="text-[10px] md:text-xs font-black uppercase tracking-[0.16em] text-slate-400 truncate">{title}</p>
-        <p className="mt-3 text-2xl md:text-3xl font-black tracking-tight text-slate-900 break-words">{value}</p>
-        <p className="mt-2 text-[10px] md:text-xs font-bold text-slate-400 leading-relaxed">{subtitle}</p>
+        <p className="text-[10px] md:text-xs font-black uppercase tracking-[0.16em] text-slate-400 truncate">
+          {title}
+        </p>
+        <p className="mt-3 text-2xl md:text-3xl font-black tracking-tight text-slate-900 break-words">
+          {value}
+        </p>
+        <p className="mt-2 text-[10px] md:text-xs font-bold text-slate-400 leading-relaxed">
+          {subtitle}
+        </p>
       </div>
-      <span className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center text-xs font-black shrink-0 border border-blue-100">{badge}</span>
+      <span className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center text-xs font-black shrink-0 border border-blue-100">
+        {badge}
+      </span>
     </div>
   </Card>
 );
-
 const AnalyticsChartCard = ({ title, subtitle, children }: any) => (
   <Card className="p-5 md:p-7 analytics-print-section">
     <div className="mb-5">
-      <h3 className="font-black text-slate-900 text-sm md:text-base tracking-tight">{title}</h3>
-      <p className="mt-1 text-[10px] md:text-xs font-bold text-slate-400">{subtitle}</p>
+      <h3 className="font-black text-slate-900 text-sm md:text-base tracking-tight">
+        {title}
+      </h3>
+      <p className="mt-1 text-[10px] md:text-xs font-bold text-slate-400">
+        {subtitle}
+      </p>
     </div>
     {children}
   </Card>
 );
-
 const AnalyticsEmptyChart = ({ label }: any) => (
   <div className="h-64 rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 flex items-center justify-center px-6 text-center text-xs font-bold text-slate-400">
     {label}
   </div>
 );
-
-const AnalyticsVerticalBarChart = ({ data, emptyLabel, animationKey, tone = "blue", locale = "id-ID" }: any) => {
+const AnalyticsVerticalBarChart = ({
+  data,
+  emptyLabel,
+  animationKey,
+  tone = "blue",
+}: any) => {
   if (!data.length) return <AnalyticsEmptyChart label={emptyLabel} />;
-  const maxValue = Math.max(...data.map((item: AnalyticsSeriesItem) => item.value), 1);
-  const barClass = tone === "indigo"
-    ? "bg-gradient-to-t from-indigo-700 to-violet-400"
-    : "bg-gradient-to-t from-blue-700 to-cyan-400";
-
+  const maxValue = Math.max(
+    ...data.map((item: AnalyticsSeriesItem) => item.value),
+    1,
+  );
+  const barClass =
+    tone === "indigo"
+      ? "bg-gradient-to-t from-indigo-700 to-violet-400"
+      : "bg-gradient-to-t from-blue-700 to-cyan-400";
   return (
-    <div key={animationKey} className="h-64 flex items-stretch gap-2 md:gap-3 pt-2 overflow-hidden">
+    <div
+      key={animationKey}
+      className="h-64 flex items-stretch gap-2 md:gap-3 pt-2 overflow-hidden"
+    >
       {data.map((item: AnalyticsSeriesItem, index: number) => {
         const barHeight = Math.max((item.value / maxValue) * 100, 4);
         return (
-          <div key={`${item.label}-${index}`} className="flex-1 min-w-0 flex flex-col">
+          <div
+            key={`${item.label}-${index}`}
+            className="flex-1 min-w-0 flex flex-col"
+          >
             <div className="h-52 flex flex-col justify-end min-w-0">
-              <span className="text-[9px] md:text-[10px] font-black text-slate-500 text-center truncate mb-1" title={item.value.toLocaleString(locale)}>{item.value.toLocaleString(locale)}</span>
-              <div className={`w-full rounded-t-xl shadow-sm analytics-grow-bar ${barClass}`} style={{ height: `${barHeight}%`, animationDelay: `${index * 55}ms` }} title={`${item.label}: ${item.value.toLocaleString(locale)}`} />
+              <span
+                className="text-[9px] md:text-[10px] font-black text-slate-500 text-center truncate mb-1"
+                title={item.value.toLocaleString(appLocale())}
+              >
+                {item.value.toLocaleString(appLocale())}
+              </span>
+              <div
+                className={`w-full rounded-t-xl shadow-sm analytics-grow-bar ${barClass}`}
+                style={{
+                  height: `${barHeight}%`,
+                  animationDelay: `${index * 55}ms`,
+                }}
+                title={`${item.label}: ${item.value.toLocaleString(appLocale())}`}
+              />
             </div>
-            <span className="mt-2 text-[9px] md:text-[10px] font-black text-slate-500 uppercase text-center truncate" title={item.label}>{item.label}</span>
+            <span
+              className="mt-2 text-[9px] md:text-[10px] font-black text-slate-500 uppercase text-center truncate"
+              title={item.label}
+            >
+              {item.label}
+            </span>
           </div>
         );
       })}
     </div>
   );
 };
-
-const AnalyticsHorizontalBarChart = ({ data, emptyLabel, animationKey, locale = "id-ID" }: any) => {
+const AnalyticsHorizontalBarChart = ({
+  data,
+  emptyLabel,
+  animationKey,
+}: any) => {
   if (!data.length) return <AnalyticsEmptyChart label={emptyLabel} />;
-  const maxValue = Math.max(...data.map((item: AnalyticsSeriesItem) => item.value), 1);
-
+  const maxValue = Math.max(
+    ...data.map((item: AnalyticsSeriesItem) => item.value),
+    1,
+  );
   return (
-    <div key={animationKey} className="space-y-4 min-h-64 flex flex-col justify-center">
+    <div
+      key={animationKey}
+      className="space-y-4 min-h-64 flex flex-col justify-center"
+    >
       {data.map((item: AnalyticsSeriesItem, index: number) => (
         <div key={`${item.label}-${index}`}>
           <div className="flex items-center justify-between gap-4 mb-1.5">
-            <span className="text-[10px] md:text-xs font-black text-slate-600 uppercase truncate" title={item.label}>{item.label}</span>
-            <span className="text-[10px] md:text-xs font-black text-slate-900 shrink-0">{item.value.toLocaleString(locale)}</span>
+            <span
+              className="text-[10px] md:text-xs font-black text-slate-600 uppercase truncate"
+              title={item.label}
+            >
+              {item.label}
+            </span>
+            <span className="text-[10px] md:text-xs font-black text-slate-900 shrink-0">
+              {item.value.toLocaleString(appLocale())}
+            </span>
           </div>
           <div className="h-3.5 rounded-full bg-slate-100 overflow-hidden border border-slate-200/70">
-            <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 analytics-grow-horizontal" style={{ width: `${Math.max((item.value / maxValue) * 100, 3)}%`, animationDelay: `${index * 60}ms` }} />
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 analytics-grow-horizontal"
+              style={{
+                width: `${Math.max((item.value / maxValue) * 100, 3)}%`,
+                animationDelay: `${index * 60}ms`,
+              }}
+            />
           </div>
         </div>
       ))}
     </div>
   );
 };
-
-const AnalyticsLineChart = ({ data, emptyLabel, animationKey, locale = "id-ID", ariaLabel = "" }: any) => {
+const AnalyticsLineChart = ({ data, emptyLabel, animationKey }: any) => {
   if (!data.length) return <AnalyticsEmptyChart label={emptyLabel} />;
-
   const width = 760;
   const height = 250;
   const left = 58;
@@ -282,20 +710,38 @@ const AnalyticsLineChart = ({ data, emptyLabel, animationKey, locale = "id-ID", 
   const bottom = 42;
   const plotWidth = width - left - right;
   const plotHeight = height - top - bottom;
-  const maxValue = Math.max(...data.map((item: AnalyticsSeriesItem) => item.value), 1);
+  const maxValue = Math.max(
+    ...data.map((item: AnalyticsSeriesItem) => item.value),
+    1,
+  );
   const points = data.map((item: AnalyticsSeriesItem, index: number) => {
     const x = left + (index / Math.max(data.length - 1, 1)) * plotWidth;
     const y = top + plotHeight - (item.value / maxValue) * plotHeight;
-    return { ...item, x, y };
+    return {
+      ...item,
+      x,
+      y,
+    };
   });
-  const linePath = points.map((point: any, index: number) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(" ");
+  const linePath = points
+    .map(
+      (point: any, index: number) =>
+        `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`,
+    )
+    .join(" ");
   const areaPath = `${linePath} L ${points[points.length - 1].x.toFixed(2)} ${(top + plotHeight).toFixed(2)} L ${points[0].x.toFixed(2)} ${(top + plotHeight).toFixed(2)} Z`;
   const gradientId = `analytics-line-gradient-${animationKey}`;
-  const labelIndexes = Array.from(new Set([0, Math.floor((points.length - 1) / 2), points.length - 1]));
-
+  const labelIndexes = Array.from(
+    new Set([0, Math.floor((points.length - 1) / 2), points.length - 1]),
+  );
   return (
     <div key={animationKey} className="w-full h-64 overflow-hidden">
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full" role="img" aria-label={ariaLabel}>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="w-full h-full"
+        role="img"
+        aria-label={bi("Tren produksi", "生产趋势")}
+      >
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#2563eb" stopOpacity="0.26" />
@@ -306,20 +752,75 @@ const AnalyticsLineChart = ({ data, emptyLabel, animationKey, locale = "id-ID", 
           const y = top + plotHeight - ratio * plotHeight;
           return (
             <g key={ratio}>
-              <line x1={left} x2={width - right} y1={y} y2={y} stroke="#e2e8f0" strokeWidth="1" />
-              <text x={left - 9} y={y + 4} textAnchor="end" fontSize="10" fontWeight="700" fill="#94a3b8">{Math.round(maxValue * ratio).toLocaleString(locale)}</text>
+              <line
+                x1={left}
+                x2={width - right}
+                y1={y}
+                y2={y}
+                stroke="#e2e8f0"
+                strokeWidth="1"
+              />
+              <text
+                x={left - 9}
+                y={y + 4}
+                textAnchor="end"
+                fontSize="10"
+                fontWeight="700"
+                fill="#94a3b8"
+              >
+                {Math.round(maxValue * ratio).toLocaleString(appLocale())}
+              </text>
             </g>
           );
         })}
-        <path d={areaPath} fill={`url(#${gradientId})`} className="analytics-area-fade" />
-        <path d={linePath} fill="none" stroke="#2563eb" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" pathLength={1} className="analytics-line-draw" />
+        <path
+          d={areaPath}
+          fill={`url(#${gradientId})`}
+          className="analytics-area-fade"
+        />
+        <path
+          d={linePath}
+          fill="none"
+          stroke="#2563eb"
+          strokeWidth="4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          pathLength={1}
+          className="analytics-line-draw"
+        />
         {points.map((point: any, index: number) => (
-          <circle key={`${point.label}-${index}`} cx={point.x} cy={point.y} r="4" fill="#ffffff" stroke="#1d4ed8" strokeWidth="3" className="analytics-point-fade" style={{ animationDelay: `${300 + index * 24}ms` }}>
-            <title>{`${point.label}: ${point.value.toLocaleString(locale)}`}</title>
+          <circle
+            key={`${point.label}-${index}`}
+            cx={point.x}
+            cy={point.y}
+            r="4"
+            fill="#ffffff"
+            stroke="#1d4ed8"
+            strokeWidth="3"
+            className="analytics-point-fade"
+            style={{
+              animationDelay: `${300 + index * 24}ms`,
+            }}
+          >
+            <title>{`${point.label}: ${point.value.toLocaleString(appLocale())}`}</title>
           </circle>
         ))}
         {labelIndexes.map((index) => (
-          <text key={index} x={points[index].x} y={height - 13} textAnchor={index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"} fontSize="10" fontWeight="700" fill="#64748b">
+          <text
+            key={index}
+            x={points[index].x}
+            y={height - 13}
+            textAnchor={
+              index === 0
+                ? "start"
+                : index === points.length - 1
+                  ? "end"
+                  : "middle"
+            }
+            fontSize="10"
+            fontWeight="700"
+            fill="#64748b"
+          >
             {points[index].label}
           </text>
         ))}
@@ -327,20 +828,43 @@ const AnalyticsLineChart = ({ data, emptyLabel, animationKey, locale = "id-ID", 
     </div>
   );
 };
-
-const AnalyticsDonutChart = ({ data, emptyLabel, animationKey, locale = "id-ID", ariaLabel = "", quantityLabel = "Qty" }: any) => {
+const AnalyticsDonutChart = ({ data, emptyLabel, animationKey }: any) => {
   if (!data.length) return <AnalyticsEmptyChart label={emptyLabel} />;
-
-  const colors = ["#2563eb", "#7c3aed", "#0d9488", "#ea580c", "#db2777", "#64748b", "#16a34a"];
-  const total = data.reduce((sum: number, item: AnalyticsSeriesItem) => sum + item.value, 0);
+  const colors = [
+    "#2563eb",
+    "#7c3aed",
+    "#0d9488",
+    "#ea580c",
+    "#db2777",
+    "#64748b",
+    "#16a34a",
+  ];
+  const total = data.reduce(
+    (sum: number, item: AnalyticsSeriesItem) => sum + item.value,
+    0,
+  );
   if (total <= 0) return <AnalyticsEmptyChart label={emptyLabel} />;
   let offset = 0;
-
   return (
-    <div key={animationKey} className="min-h-64 grid grid-cols-1 sm:grid-cols-[210px_1fr] items-center gap-5">
+    <div
+      key={animationKey}
+      className="min-h-64 grid grid-cols-1 sm:grid-cols-[210px_1fr] items-center gap-5"
+    >
       <div className="relative w-52 h-52 mx-auto analytics-donut-in">
-        <svg viewBox="0 0 180 180" className="w-full h-full -rotate-90" role="img" aria-label={ariaLabel}>
-          <circle cx="90" cy="90" r="62" fill="none" stroke="#e2e8f0" strokeWidth="24" />
+        <svg
+          viewBox="0 0 180 180"
+          className="w-full h-full -rotate-90"
+          role="img"
+          aria-label={bi("Distribusi warna", "颜色分布")}
+        >
+          <circle
+            cx="90"
+            cy="90"
+            r="62"
+            fill="none"
+            stroke="#e2e8f0"
+            strokeWidth="24"
+          />
           {data.map((item: AnalyticsSeriesItem, index: number) => {
             const percentage = (item.value / total) * 100;
             const currentOffset = offset;
@@ -358,75 +882,213 @@ const AnalyticsDonutChart = ({ data, emptyLabel, animationKey, locale = "id-ID",
                 strokeDasharray={`${percentage} ${100 - percentage}`}
                 strokeDashoffset={-currentOffset}
               >
-                <title>{`${item.label}: ${item.value.toLocaleString(locale)} (${percentage.toFixed(1)}%)`}</title>
+                <title>{`${item.label}: ${item.value.toLocaleString(appLocale())} (${percentage.toFixed(1)}%)`}</title>
               </circle>
             );
           })}
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <span className="text-2xl font-black text-slate-900">{total.toLocaleString(locale)}</span>
-          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{quantityLabel}</span>
+          <span className="text-2xl font-black text-slate-900">
+            {total.toLocaleString(appLocale())}
+          </span>
+          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+            {bi("Qty", "数量")}
+          </span>
         </div>
       </div>
       <div className="space-y-2.5 min-w-0">
         {data.map((item: AnalyticsSeriesItem, index: number) => (
-          <div key={`${item.label}-${index}`} className="flex items-center justify-between gap-3">
+          <div
+            key={`${item.label}-${index}`}
+            className="flex items-center justify-between gap-3"
+          >
             <div className="flex items-center gap-2 min-w-0">
-              <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: colors[index % colors.length] }} />
-              <span className="text-[10px] md:text-xs font-black text-slate-600 uppercase truncate" title={item.label}>{item.label}</span>
+              <span
+                className="w-3 h-3 rounded-full shrink-0"
+                style={{
+                  backgroundColor: colors[index % colors.length],
+                }}
+              />
+              <span
+                className="text-[10px] md:text-xs font-black text-slate-600 uppercase truncate"
+                title={item.label}
+              >
+                {item.label}
+              </span>
             </div>
-            <span className="text-[10px] md:text-xs font-black text-slate-900 shrink-0">{((item.value / total) * 100).toFixed(1)}%</span>
+            <span className="text-[10px] md:text-xs font-black text-slate-900 shrink-0">
+              {((item.value / total) * 100).toFixed(1)}%
+            </span>
           </div>
         ))}
       </div>
     </div>
   );
 };
-
 function AnalyticsPage({ session, language }: any) {
-  const languageCode = resolveLanguage(language);
-  const isChinese = languageCode === "cn";
-  const locale = appLocale(languageCode);
-  const unit = appUnit(languageCode);
-  const copy = isChinese ? {
-    title: "数据分析",
-    subtitle: "分析页面使用独立查询、筛选和数据处理，不会影响生产页面、分页或本地缓存。",
-    startDate: "开始日期", endDate: "结束日期", shift: "班次", operator: "操作员", product: "产品", color: "颜色",
-    search: "搜索", sorting: "排序", reset: "重置筛选", exportPdf: "导出 PDF", all: "全部",
-    searchPlaceholder: "搜索产品、颜色、备注或操作员...", updating: "正在更新分析数据...", noData: "当前筛选条件下没有数据。",
-    invalidRange: "开始日期不能晚于结束日期。", queryError: "无法加载分析数据。",
-    newest: "最新记录", oldest: "最早记录", qtyHigh: "数量从高到低", qtyLow: "数量从低到高", productAZ: "产品 A-Z", operatorAZ: "操作员 A-Z",
-    totalProduction: "总产量", totalQuantity: "总数量", totalRecord: "记录总数", totalOperator: "操作员总数", totalProduct: "产品总数", totalColor: "颜色总数",
-    today: "今日产量", week: "本周产量", month: "本月产量", bestOperator: "最佳操作员", topProduct: "产量最高产品", topColor: "产量最高颜色", dailyAverage: "日均产量",
-    outputAccumulation: "按当前筛选累计的生产数量", quantityAccumulation: "Quantity 字段累计值", recordsMatched: "符合筛选条件的记录", uniqueOperator: "不同操作员数量", uniqueProduct: "不同产品数量", uniqueColor: "不同颜色数量",
-    todayHint: "当前筛选结果中的今日数据", weekHint: "本周数据（周一开始）", monthHint: "本月数据", byQuantity: "按总数量计算", perActiveDay: "按有生产记录的日期计算平均值",
-    productChart: "各产品产量", productChartSub: "按 Quantity 累计的主要产品", operatorChart: "操作员贡献", operatorChartSub: "各操作员的累计产量", trendChart: "生产趋势", trendChartSub: "按日期汇总的生产变化",
-    colorChart: "颜色分布", colorChartSub: "各颜色在总产量中的占比", shiftChart: "班次分布", shiftChartSub: "白班与夜班的累计产量", top10Chart: "产量前 10 产品", top10ChartSub: "Quantity 最高的十个产品",
-    filteredData: "筛选数据", filteredDataSub: "屏幕显示前 50 条记录；PDF 报告包含全部筛选数据。", date: "日期", qty: "数量", note: "备注", showing: "显示", of: "共",
-    reportTitle: "BUYMORE 生产分析报告", period: "报告期间", generated: "打印时间", footer: "BUYMORE 数据分析 • 本文档由系统自动生成", preparedBy: "制表人", approvedBy: "审核人", signature: "签名",
-    allData: "全部日期", chartEmpty: "没有可用于图表的数据。", recordUnit: "条记录", lineAria: "生产趋势折线图", donutAria: "颜色分布环形图", quantityLabel: "数量",
-    filePrefix: "BUYMORE-生产分析", allDatesFilename: "全部日期", day: "白班", night: "夜班", clearSearch: "清除搜索"
-  } : {
-    title: "Analisis",
-    subtitle: "Halaman Analisis menggunakan query, filter, dan pemrosesan data terisolasi sehingga tidak memengaruhi Produksi, pagination, atau Local Cache.",
-    startDate: "Tanggal Mulai", endDate: "Tanggal Akhir", shift: "Shift", operator: "Operator", product: "Produk", color: "Warna",
-    search: "Pencarian", sorting: "Pengurutan", reset: "Reset Filter", exportPdf: "Ekspor PDF", all: "Semua",
-    searchPlaceholder: "Cari produk, warna, catatan, atau operator...", updating: "Memperbarui data Analisis...", noData: "Tidak ada data untuk filter Analisis saat ini.",
-    invalidRange: "Tanggal mulai tidak boleh melewati tanggal akhir.", queryError: "Data Analisis tidak dapat dimuat.",
-    newest: "Data terbaru", oldest: "Data terlama", qtyHigh: "Quantity terbesar", qtyLow: "Quantity terkecil", productAZ: "Produk A-Z", operatorAZ: "Operator A-Z",
-    totalProduction: "Total Produksi", totalQuantity: "Total Quantity", totalRecord: "Total Record", totalOperator: "Total Operator", totalProduct: "Total Produk", totalColor: "Total Warna",
-    today: "Produksi Hari Ini", week: "Produksi Minggu Ini", month: "Produksi Bulan Ini", bestOperator: "Operator Terbaik", topProduct: "Produk Terbanyak", topColor: "Warna Terbanyak", dailyAverage: "Rata-rata Produksi Harian",
-    outputAccumulation: "Akumulasi output sesuai filter aktif", quantityAccumulation: "Akumulasi nilai pada field Quantity", recordsMatched: "Record yang sesuai dengan filter", uniqueOperator: "Jumlah operator unik", uniqueProduct: "Jumlah produk unik", uniqueColor: "Jumlah warna unik",
-    todayHint: "Data hari ini di dalam hasil filter", weekHint: "Minggu berjalan, dimulai Senin", monthHint: "Bulan berjalan", byQuantity: "Berdasarkan total quantity", perActiveDay: "Rata-rata per tanggal yang memiliki record",
-    productChart: "Produksi per Produk", productChartSub: "Produk utama berdasarkan akumulasi Quantity", operatorChart: "Kontribusi Operator", operatorChartSub: "Akumulasi produksi masing-masing operator", trendChart: "Tren Produksi", trendChartSub: "Pergerakan total produksi berdasarkan tanggal",
-    colorChart: "Distribusi Warna", colorChartSub: "Proporsi produksi untuk setiap warna", shiftChart: "Distribusi Shift", shiftChartSub: "Perbandingan akumulasi produksi per shift", top10Chart: "Top 10 Produk", top10ChartSub: "Sepuluh produk dengan Quantity tertinggi",
-    filteredData: "Data Terfilter", filteredDataSub: "Tampilan layar memuat 50 record pertama; laporan PDF memuat seluruh data terfilter.", date: "Tanggal", qty: "Qty", note: "Catatan", showing: "Menampilkan", of: "dari",
-    reportTitle: "LAPORAN ANALISIS PRODUKSI BUYMORE", period: "Periode Laporan", generated: "Waktu Cetak", footer: "BUYMORE ANALYTICS • Dokumen dibuat otomatis oleh sistem", preparedBy: "Dibuat oleh", approvedBy: "Disetujui oleh", signature: "Tanda Tangan",
-    allData: "Semua tanggal", chartEmpty: "Belum ada data yang dapat divisualisasikan.", recordUnit: "record", lineAria: "Grafik garis tren produksi", donutAria: "Grafik donat distribusi warna", quantityLabel: "Qty",
-    filePrefix: "Laporan-Analisis-BUYMORE", allDatesFilename: "semua-tanggal", day: "Siang", night: "Malam", clearSearch: "Hapus pencarian"
-  };
-
-  const [analyticsRecords, setAnalyticsRecords] = useState<AnalyticsRecord[]>([]);
+  const isChinese = language === "cn";
+  const copy = isChinese
+    ? {
+        title: "数据分析",
+        subtitle: "独立查询、筛选与统计，不影响生产页面。",
+        startDate: "开始日期",
+        endDate: "结束日期",
+        shift: "班次",
+        operator: "操作员",
+        product: "产品",
+        color: "颜色",
+        search: "搜索",
+        sorting: "排序",
+        reset: "重置筛选",
+        exportPdf: "导出 PDF",
+        all: "全部",
+        searchPlaceholder: "产品、颜色、备注、操作员...",
+        updating: "正在更新分析数据...",
+        noData: "筛选条件下没有数据。",
+        invalidRange: "开始日期不能晚于结束日期。",
+        queryError: "无法加载分析数据。",
+        newest: "最新记录",
+        oldest: "最早记录",
+        qtyHigh: "数量从高到低",
+        qtyLow: "数量从低到高",
+        productAZ: "产品 A-Z",
+        operatorAZ: "操作员 A-Z",
+        totalProduction: "总产量",
+        totalQuantity: "总数量",
+        totalRecord: "总记录",
+        totalOperator: "操作员总数",
+        totalProduct: "产品总数",
+        totalColor: "颜色总数",
+        today: "今日产量",
+        week: "本周产量",
+        month: "本月产量",
+        bestOperator: "最佳操作员",
+        topProduct: "最多产品",
+        topColor: "最多颜色",
+        dailyAverage: "日均产量",
+        outputAccumulation: "筛选结果的累计产出",
+        quantityAccumulation: "Quantity 字段累计",
+        recordsMatched: "符合条件的记录",
+        uniqueOperator: "唯一操作员",
+        uniqueProduct: "唯一产品",
+        uniqueColor: "唯一颜色",
+        todayHint: "当前日期范围内",
+        weekHint: "本周（周一开始）",
+        monthHint: "本月",
+        byQuantity: "按数量计算",
+        perActiveDay: "每个有记录日期的平均值",
+        productChart: "各产品产量",
+        productChartSub: "按 Quantity 汇总的主要产品",
+        operatorChart: "操作员贡献",
+        operatorChartSub: "按操作员汇总的产量",
+        trendChart: "生产趋势",
+        trendChartSub: "按日期汇总的生产走势",
+        colorChart: "颜色分布",
+        colorChartSub: "各颜色的生产占比",
+        shiftChart: "班次分布",
+        shiftChartSub: "白班与夜班的产量",
+        top10Chart: "前 10 产品",
+        top10ChartSub: "数量最高的十个产品",
+        filteredData: "筛选数据",
+        filteredDataSub: "屏幕显示前 50 条，PDF 报告包含全部筛选数据。",
+        date: "日期",
+        qty: "数量",
+        note: "备注",
+        showing: "显示",
+        of: "共",
+        reportTitle: "BUYMORE 生产分析报告",
+        period: "报告期间",
+        generated: "打印时间",
+        footer: "BUYMORE ANALYTICS • 由系统自动生成",
+        preparedBy: "制表",
+        approvedBy: "审核",
+        signature: "签名",
+        allData: "全部日期",
+        chartEmpty: "没有可用于图表的数据。",
+      }
+    : {
+        title: "Analisis",
+        subtitle:
+          "Query, filter, statistik, dan grafik berdiri sendiri tanpa memengaruhi halaman Produksi.",
+        startDate: "Tanggal Mulai",
+        endDate: "Tanggal Akhir",
+        shift: "Shift",
+        operator: "Operator",
+        product: "Produk",
+        color: "Warna",
+        search: "Search",
+        sorting: "Sorting",
+        reset: "Reset Filter",
+        exportPdf: "Export PDF",
+        all: "Semua",
+        searchPlaceholder: "Produk, warna, catatan, operator...",
+        updating: "Memperbarui data analisis...",
+        noData: "Tidak ada data untuk filter Analisis.",
+        invalidRange: "Tanggal mulai tidak boleh melewati tanggal akhir.",
+        queryError: "Data Analisis tidak dapat dimuat.",
+        newest: "Data terbaru",
+        oldest: "Data terlama",
+        qtyHigh: "Quantity terbesar",
+        qtyLow: "Quantity terkecil",
+        productAZ: "Produk A-Z",
+        operatorAZ: "Operator A-Z",
+        totalProduction: "Total Produksi",
+        totalQuantity: "Total Quantity",
+        totalRecord: "Total Record",
+        totalOperator: "Total Operator",
+        totalProduct: "Total Produk",
+        totalColor: "Total Warna",
+        today: "Produksi Hari Ini",
+        week: "Produksi Minggu Ini",
+        month: "Produksi Bulan Ini",
+        bestOperator: "Operator Terbaik",
+        topProduct: "Produk Terbanyak",
+        topColor: "Warna Terbanyak",
+        dailyAverage: "Rata-rata Produksi Harian",
+        outputAccumulation: "Akumulasi output sesuai filter",
+        quantityAccumulation: "Akumulasi field Quantity",
+        recordsMatched: "Record yang sesuai filter",
+        uniqueOperator: "Operator unik",
+        uniqueProduct: "Produk unik",
+        uniqueColor: "Warna unik",
+        todayHint: "Dalam hasil filter aktif",
+        weekHint: "Minggu berjalan (mulai Senin)",
+        monthHint: "Bulan berjalan",
+        byQuantity: "Berdasarkan total quantity",
+        perActiveDay: "Rata-rata per tanggal yang memiliki record",
+        productChart: "Produksi per Produk",
+        productChartSub: "Produk utama berdasarkan akumulasi Quantity",
+        operatorChart: "Kontribusi Operator",
+        operatorChartSub: "Akumulasi produksi masing-masing operator",
+        trendChart: "Tren Produksi",
+        trendChartSub: "Pergerakan total produksi berdasarkan tanggal",
+        colorChart: "Distribusi Warna",
+        colorChartSub: "Proporsi produksi untuk setiap warna",
+        shiftChart: "Distribusi Shift",
+        shiftChartSub: "Perbandingan akumulasi produksi per shift",
+        top10Chart: "Top 10 Produk",
+        top10ChartSub: "Sepuluh produk dengan Quantity tertinggi",
+        filteredData: "Data Terfilter",
+        filteredDataSub:
+          "Tampilan layar memuat 50 record pertama; laporan PDF memuat seluruh data terfilter.",
+        date: "Tanggal",
+        qty: "Qty",
+        note: "Catatan",
+        showing: "Menampilkan",
+        of: "dari",
+        reportTitle: "LAPORAN ANALISIS PRODUKSI BUYMORE",
+        period: "Periode Laporan",
+        generated: "Waktu Cetak",
+        footer: "BUYMORE ANALYTICS • Dokumen dibuat otomatis oleh sistem",
+        preparedBy: "Dibuat oleh",
+        approvedBy: "Disetujui oleh",
+        signature: "Tanda Tangan",
+        allData: "Semua tanggal",
+        chartEmpty: "Belum ada data yang dapat divisualisasikan.",
+      };
+  const [analyticsRecords, setAnalyticsRecords] = useState<AnalyticsRecord[]>(
+    [],
+  );
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
   const [analyticsError, setAnalyticsError] = useState("");
   const [analyticsStartDate, setAnalyticsStartDate] = useState("");
@@ -441,175 +1103,327 @@ function AnalyticsPage({ session, language }: any) {
   const [analyticsRefreshVersion, setAnalyticsRefreshVersion] = useState(0);
   const [analyticsAnimationKey, setAnalyticsAnimationKey] = useState(0);
   const [analyticsPrintMode, setAnalyticsPrintMode] = useState(false);
-  const [analyticsOptions, setAnalyticsOptions] = useState({ operators: [] as string[], products: [] as string[], colors: [] as string[] });
-
+  const [analyticsOptions, setAnalyticsOptions] = useState({
+    operators: [] as string[],
+    products: [] as string[],
+    colors: [] as string[],
+  });
   useEffect(() => {
-    const timeout = window.setTimeout(() => setAnalyticsSearch(analyticsSearchInput.trim()), 250);
+    const timeout = window.setTimeout(
+      () => setAnalyticsSearch(analyticsSearchInput.trim()),
+      250,
+    );
     return () => window.clearTimeout(timeout);
   }, [analyticsSearchInput]);
-
   useEffect(() => {
     setAnalyticsAnimationKey((previous) => previous + 1);
   }, [analyticsSearch, analyticsSort]);
-
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
-
     const loadAnalytics = async () => {
-      if (analyticsStartDate && analyticsEndDate && analyticsStartDate > analyticsEndDate) {
+      if (
+        analyticsStartDate &&
+        analyticsEndDate &&
+        analyticsStartDate > analyticsEndDate
+      ) {
         setAnalyticsError(copy.invalidRange);
         setAnalyticsRecords([]);
         setAnalyticsAnimationKey((previous) => previous + 1);
         setAnalyticsLoading(false);
         return;
       }
-
       setAnalyticsLoading(true);
       setAnalyticsError("");
-
       try {
         const collected: AnalyticsRecord[] = [];
         let lastId: string | number | null = null;
-
         while (!cancelled) {
           let query = supabase
             .from("production_data")
             .select("id,date,time,color,shift,product,quantity,note,created_by")
-            .order("id", { ascending: false })
+            .is("deleted_at", null)
+            .order("id", {
+              ascending: false,
+            })
             .limit(ANALYTICS_BATCH_SIZE);
-
           if (lastId !== null) query = query.lt("id", lastId);
           if (analyticsStartDate) query = query.gte("date", analyticsStartDate);
           if (analyticsEndDate) query = query.lte("date", analyticsEndDate);
-          if (analyticsShift !== "Semua") query = query.eq("shift", analyticsShift);
-          if (analyticsOperator !== "Semua") query = query.eq("created_by", analyticsOperator);
-          if (analyticsProduct !== "Semua") query = query.eq("product", analyticsProduct);
-          if (analyticsColor !== "Semua") query = query.eq("color", analyticsColor);
-
+          if (analyticsShift !== "Semua")
+            query = query.eq("shift", analyticsShift);
+          if (analyticsOperator !== "Semua")
+            query = query.eq("created_by", analyticsOperator);
+          if (analyticsProduct !== "Semua")
+            query = query.eq("product", analyticsProduct);
+          if (analyticsColor !== "Semua")
+            query = query.eq("color", analyticsColor);
           const { data, error } = await query;
           if (error) throw error;
-
           const batch = (data || []) as AnalyticsRecord[];
           collected.push(...batch);
           if (batch.length < ANALYTICS_BATCH_SIZE) break;
           const nextLastId = batch[batch.length - 1]?.id;
-          if (nextLastId === undefined || nextLastId === null || nextLastId === lastId) break;
+          if (
+            nextLastId === undefined ||
+            nextLastId === null ||
+            nextLastId === lastId
+          )
+            break;
           lastId = nextLastId;
         }
-
         if (!cancelled) {
           setAnalyticsRecords(collected);
           setAnalyticsOptions((previous) => {
-            const operators = Array.from(new Set([...previous.operators, ...collected.map((row) => analyticsNormalize(row.created_by)).filter(Boolean)])).sort((a, b) => a.localeCompare(b));
-            const products = Array.from(new Set([...previous.products, ...collected.map((row) => analyticsNormalize(row.product)).filter(Boolean)])).sort((a, b) => a.localeCompare(b));
-            const colors = Array.from(new Set([...previous.colors, ...collected.map((row) => analyticsNormalize(row.color)).filter(Boolean)])).sort((a, b) => a.localeCompare(b));
-            return { operators, products, colors };
+            const operators = Array.from(
+              new Set([
+                ...previous.operators,
+                ...collected
+                  .map((row) => analyticsNormalize(row.created_by))
+                  .filter(Boolean),
+              ]),
+            ).sort((a, b) => a.localeCompare(b));
+            const products = Array.from(
+              new Set([
+                ...previous.products,
+                ...collected
+                  .map((row) => analyticsNormalize(row.product))
+                  .filter(Boolean),
+              ]),
+            ).sort((a, b) => a.localeCompare(b));
+            const colors = Array.from(
+              new Set([
+                ...previous.colors,
+                ...collected
+                  .map((row) => analyticsNormalize(row.color))
+                  .filter(Boolean),
+              ]),
+            ).sort((a, b) => a.localeCompare(b));
+            return {
+              operators,
+              products,
+              colors,
+            };
           });
           setAnalyticsAnimationKey((previous) => previous + 1);
         }
       } catch (error: any) {
-        if (!cancelled) setAnalyticsError(localizeSupabaseError(error, languageCode, copy.queryError));
+        if (!cancelled)
+          setAnalyticsError(
+            error?.message
+              ? `${copy.queryError} ${error.message}`
+              : copy.queryError,
+          );
       } finally {
         if (!cancelled) setAnalyticsLoading(false);
       }
     };
-
     loadAnalytics();
-    return () => { cancelled = true; };
-  }, [session, analyticsStartDate, analyticsEndDate, analyticsShift, analyticsOperator, analyticsProduct, analyticsColor, analyticsRefreshVersion, copy.invalidRange, copy.queryError]);
-
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    session,
+    analyticsStartDate,
+    analyticsEndDate,
+    analyticsShift,
+    analyticsOperator,
+    analyticsProduct,
+    analyticsColor,
+    analyticsRefreshVersion,
+    copy.invalidRange,
+    copy.queryError,
+  ]);
   useEffect(() => {
     if (!session) return;
     let refreshTimer: number | undefined;
     const channel = supabase
       .channel(`realtime-analytics-${session.user.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "production_data" }, (payload: any) => {
-        const changedRow = (payload.new && Object.keys(payload.new).length ? payload.new : payload.old) as AnalyticsRecord;
-        if (changedRow) {
-          setAnalyticsOptions((previous) => ({
-            operators: Array.from(new Set([...previous.operators, analyticsNormalize(changedRow.created_by)].filter(Boolean))).sort((a, b) => a.localeCompare(b)),
-            products: Array.from(new Set([...previous.products, analyticsNormalize(changedRow.product)].filter(Boolean))).sort((a, b) => a.localeCompare(b)),
-            colors: Array.from(new Set([...previous.colors, analyticsNormalize(changedRow.color)].filter(Boolean))).sort((a, b) => a.localeCompare(b))
-          }));
-        }
-        if (refreshTimer) window.clearTimeout(refreshTimer);
-        refreshTimer = window.setTimeout(() => setAnalyticsRefreshVersion((previous) => previous + 1), 250);
-      })
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "production_data",
+        },
+        (payload: any) => {
+          const changedRow = (
+            payload.new && Object.keys(payload.new).length
+              ? payload.new
+              : payload.old
+          ) as AnalyticsRecord;
+          if (changedRow) {
+            setAnalyticsOptions((previous) => ({
+              operators: Array.from(
+                new Set(
+                  [
+                    ...previous.operators,
+                    analyticsNormalize(changedRow.created_by),
+                  ].filter(Boolean),
+                ),
+              ).sort((a, b) => a.localeCompare(b)),
+              products: Array.from(
+                new Set(
+                  [
+                    ...previous.products,
+                    analyticsNormalize(changedRow.product),
+                  ].filter(Boolean),
+                ),
+              ).sort((a, b) => a.localeCompare(b)),
+              colors: Array.from(
+                new Set(
+                  [
+                    ...previous.colors,
+                    analyticsNormalize(changedRow.color),
+                  ].filter(Boolean),
+                ),
+              ).sort((a, b) => a.localeCompare(b)),
+            }));
+          }
+          if (refreshTimer) window.clearTimeout(refreshTimer);
+          refreshTimer = window.setTimeout(
+            () => setAnalyticsRefreshVersion((previous) => previous + 1),
+            250,
+          );
+        },
+      )
       .subscribe();
-
     return () => {
       if (refreshTimer) window.clearTimeout(refreshTimer);
       supabase.removeChannel(channel);
     };
   }, [session]);
-
   const processedRecords = React.useMemo(() => {
     const search = analyticsSearch.toUpperCase();
     const filtered = analyticsRecords.filter((row) => {
       if (!search) return true;
-      return [row.date, row.time, row.shift, row.product, row.color, row.note, row.created_by]
+      return [
+        row.date,
+        row.time,
+        row.shift,
+        row.product,
+        row.color,
+        row.note,
+        row.created_by,
+      ]
         .map((value) => analyticsNormalize(value).toUpperCase())
         .some((value) => value.includes(search));
     });
-
     return [...filtered].sort((a, b) => {
       const aQty = analyticsNumber(a.quantity);
       const bQty = analyticsNumber(b.quantity);
       const aDateTime = `${analyticsNormalize(a.date)} ${analyticsNormalize(a.time)}`;
       const bDateTime = `${analyticsNormalize(b.date)} ${analyticsNormalize(b.time)}`;
-      if (analyticsSort === "oldest") return aDateTime.localeCompare(bDateTime) || String(a.id).localeCompare(String(b.id));
+      if (analyticsSort === "oldest")
+        return (
+          aDateTime.localeCompare(bDateTime) ||
+          String(a.id).localeCompare(String(b.id))
+        );
       if (analyticsSort === "qty_desc") return bQty - aQty;
       if (analyticsSort === "qty_asc") return aQty - bQty;
-      if (analyticsSort === "product_asc") return analyticsNormalize(a.product).localeCompare(analyticsNormalize(b.product));
-      if (analyticsSort === "operator_asc") return analyticsNormalize(a.created_by).localeCompare(analyticsNormalize(b.created_by));
-      return bDateTime.localeCompare(aDateTime) || String(b.id).localeCompare(String(a.id));
+      if (analyticsSort === "product_asc")
+        return analyticsNormalize(a.product).localeCompare(
+          analyticsNormalize(b.product),
+        );
+      if (analyticsSort === "operator_asc")
+        return analyticsNormalize(a.created_by).localeCompare(
+          analyticsNormalize(b.created_by),
+        );
+      return (
+        bDateTime.localeCompare(aDateTime) ||
+        String(b.id).localeCompare(String(a.id))
+      );
     });
   }, [analyticsRecords, analyticsSearch, analyticsSort]);
-
   const analyticsData = React.useMemo(() => {
-    const totalQuantity = processedRecords.reduce((sum, row) => sum + analyticsNumber(row.quantity), 0);
-    const uniqueDates = new Set(processedRecords.map((row) => analyticsNormalize(row.date)).filter(Boolean));
-    const operators = new Set(processedRecords.map((row) => analyticsNormalize(row.created_by)).filter(Boolean));
-    const products = new Set(processedRecords.map((row) => analyticsNormalize(row.product)).filter(Boolean));
-    const colors = new Set(processedRecords.map((row) => analyticsNormalize(row.color)).filter(Boolean));
-
-    const now = new Date();
-    const todayKey = analyticsDateKey(now);
-    const weekStart = new Date(now);
-    const dayFromMonday = (weekStart.getDay() + 6) % 7;
-    weekStart.setDate(weekStart.getDate() - dayFromMonday);
-    weekStart.setHours(0, 0, 0, 0);
-    const weekStartKey = analyticsDateKey(weekStart);
-    const monthStartKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-
-    const productionToday = processedRecords.filter((row) => row.date === todayKey).reduce((sum, row) => sum + analyticsNumber(row.quantity), 0);
-    const productionWeek = processedRecords.filter((row) => {
-      const date = analyticsNormalize(row.date);
-      return date >= weekStartKey && date <= todayKey;
-    }).reduce((sum, row) => sum + analyticsNumber(row.quantity), 0);
-    const productionMonth = processedRecords.filter((row) => {
-      const date = analyticsNormalize(row.date);
-      return date >= monthStartKey && date <= todayKey;
-    }).reduce((sum, row) => sum + analyticsNumber(row.quantity), 0);
-
+    const totalQuantity = processedRecords.reduce(
+      (sum, row) => sum + analyticsNumber(row.quantity),
+      0,
+    );
+    const uniqueDates = new Set(
+      processedRecords
+        .map((row) => analyticsNormalize(row.date))
+        .filter(Boolean),
+    );
+    const operators = new Set(
+      processedRecords
+        .map((row) => analyticsNormalize(row.created_by))
+        .filter(Boolean),
+    );
+    const products = new Set(
+      processedRecords
+        .map((row) => analyticsNormalize(row.product))
+        .filter(Boolean),
+    );
+    const colors = new Set(
+      processedRecords
+        .map((row) => analyticsNormalize(row.color))
+        .filter(Boolean),
+    );
+    const todayKey = analyticsDateKey(new Date());
+    const [todayYear, todayMonth, todayDay] = todayKey
+      .split("-")
+      .map((value) => Number(value));
+    const todayUtc = new Date(
+      Date.UTC(todayYear, Math.max(todayMonth - 1, 0), todayDay),
+    );
+    const dayFromMonday = (todayUtc.getUTCDay() + 6) % 7;
+    todayUtc.setUTCDate(todayUtc.getUTCDate() - dayFromMonday);
+    const weekStartKey = todayUtc.toISOString().slice(0, 10);
+    const monthStartKey = `${todayKey.slice(0, 7)}-01`;
+    const productionToday = processedRecords
+      .filter((row) => row.date === todayKey)
+      .reduce((sum, row) => sum + analyticsNumber(row.quantity), 0);
+    const productionWeek = processedRecords
+      .filter((row) => {
+        const date = analyticsNormalize(row.date);
+        return date >= weekStartKey && date <= todayKey;
+      })
+      .reduce((sum, row) => sum + analyticsNumber(row.quantity), 0);
+    const productionMonth = processedRecords
+      .filter((row) => {
+        const date = analyticsNormalize(row.date);
+        return date >= monthStartKey && date <= todayKey;
+      })
+      .reduce((sum, row) => sum + analyticsNumber(row.quantity), 0);
     const productSeries = analyticsGroupByQuantity(processedRecords, "product");
-    const operatorSeries = analyticsGroupByQuantity(processedRecords, "created_by");
+    const operatorSeries = analyticsGroupByQuantity(
+      processedRecords,
+      "created_by",
+    );
     const colorSeriesRaw = analyticsGroupByQuantity(processedRecords, "color");
-    const shiftSeries = analyticsGroupByQuantity(processedRecords, "shift").map((item) => ({ ...item, label: translateShift(item.label, languageCode) }));
+    const shiftSeries = analyticsGroupByQuantity(processedRecords, "shift").map(
+      (item) => ({
+        ...item,
+        label: shiftLabel(item.label, language),
+      }),
+    );
     const trendMap = new Map<string, number>();
     processedRecords.forEach((row) => {
       const date = analyticsNormalize(row.date) || "-";
-      trendMap.set(date, (trendMap.get(date) || 0) + analyticsNumber(row.quantity));
+      trendMap.set(
+        date,
+        (trendMap.get(date) || 0) + analyticsNumber(row.quantity),
+      );
     });
     const trendSeries = Array.from(trendMap.entries())
-      .map(([label, value]) => ({ label, value }))
+      .map(([label, value]) => ({
+        label,
+        value,
+      }))
       .sort((a, b) => a.label.localeCompare(b.label));
-
-    const colorSeries = colorSeriesRaw.length > 6
-      ? [...colorSeriesRaw.slice(0, 6), { label: isChinese ? "其他" : "LAINNYA", value: colorSeriesRaw.slice(6).reduce((sum, item) => sum + item.value, 0) }]
-      : colorSeriesRaw;
-
+    const colorSeries =
+      colorSeriesRaw.length > 6
+        ? [
+            ...colorSeriesRaw.slice(0, 6),
+            {
+              label: isChinese ? "其他" : "LAINNYA",
+              value: colorSeriesRaw
+                .slice(6)
+                .reduce((sum, item) => sum + item.value, 0),
+            },
+          ]
+        : colorSeriesRaw;
     return {
       totalQuantity,
       totalRecord: processedRecords.length,
@@ -628,10 +1442,9 @@ function AnalyticsPage({ session, language }: any) {
       colorSeries,
       shiftSeries,
       trendSeries,
-      topTenProducts: productSeries.slice(0, 10)
+      topTenProducts: productSeries.slice(0, 10),
     };
-  }, [processedRecords, isChinese, languageCode]);
-
+  }, [processedRecords, isChinese, language]);
   const resetAnalyticsFilters = () => {
     setAnalyticsStartDate("");
     setAnalyticsEndDate("");
@@ -644,48 +1457,119 @@ function AnalyticsPage({ session, language }: any) {
     setAnalyticsSort("newest");
     setAnalyticsError("");
   };
-
   const handleAnalyticsPrint = () => {
     if (analyticsLoading || analyticsError || processedRecords.length === 0) {
       alert(analyticsError || (analyticsLoading ? copy.updating : copy.noData));
       return;
     }
-
     setAnalyticsPrintMode(true);
     const previousTitle = document.title;
-    const periodLabel = analyticsStartDate || analyticsEndDate ? `${analyticsStartDate || "..."}_${analyticsEndDate || "..."}` : copy.allDatesFilename;
-    document.title = `${copy.filePrefix}-${periodLabel}`;
+    const periodLabel =
+      analyticsStartDate || analyticsEndDate
+        ? `${analyticsStartDate || "..."}_${analyticsEndDate || "..."}`
+        : bi("semua-tanggal", "全部日期", language);
+    document.title = `${bi("Laporan-Analisis", "生产分析报告", language)}-${periodLabel}`;
     const restorePrintState = () => {
       document.title = previousTitle;
       setAnalyticsPrintMode(false);
       window.removeEventListener("afterprint", restorePrintState);
     };
     window.addEventListener("afterprint", restorePrintState);
-    window.requestAnimationFrame(() => window.requestAnimationFrame(() => window.print()));
+    window.requestAnimationFrame(() =>
+      window.requestAnimationFrame(() => window.print()),
+    );
   };
-
-  const periodText = analyticsStartDate || analyticsEndDate
-    ? `${analyticsStartDate || "..."} — ${analyticsEndDate || "..."}`
-    : copy.allData;
-
+  const periodText =
+    analyticsStartDate || analyticsEndDate
+      ? `${analyticsStartDate || "..."} — ${analyticsEndDate || "..."}`
+      : copy.allData;
   const statisticCards = [
-    { title: copy.totalProduction, value: `${formatAppNumber(analyticsData.totalQuantity, languageCode)} ${unit}`, subtitle: copy.outputAccumulation, badge: "Σ" },
-    { title: copy.totalQuantity, value: formatAppNumber(analyticsData.totalQuantity, languageCode), subtitle: copy.quantityAccumulation, badge: "QTY" },
-    { title: copy.totalRecord, value: formatAppNumber(analyticsData.totalRecord, languageCode), subtitle: copy.recordsMatched, badge: "#" },
-    { title: copy.totalOperator, value: formatAppNumber(analyticsData.totalOperator, languageCode), subtitle: copy.uniqueOperator, badge: "OP" },
-    { title: copy.totalProduct, value: formatAppNumber(analyticsData.totalProduct, languageCode), subtitle: copy.uniqueProduct, badge: "SKU" },
-    { title: copy.totalColor, value: formatAppNumber(analyticsData.totalColor, languageCode), subtitle: copy.uniqueColor, badge: "CLR" },
-    { title: copy.today, value: `${formatAppNumber(analyticsData.productionToday, languageCode)} ${unit}`, subtitle: copy.todayHint, badge: "D" },
-    { title: copy.week, value: `${formatAppNumber(analyticsData.productionWeek, languageCode)} ${unit}`, subtitle: copy.weekHint, badge: "W" },
-    { title: copy.month, value: `${formatAppNumber(analyticsData.productionMonth, languageCode)} ${unit}`, subtitle: copy.monthHint, badge: "M" },
-    { title: copy.bestOperator, value: analyticsData.bestOperator, subtitle: copy.byQuantity, badge: "★" },
-    { title: copy.topProduct, value: analyticsData.topProduct, subtitle: copy.byQuantity, badge: "P" },
-    { title: copy.topColor, value: analyticsData.topColor, subtitle: copy.byQuantity, badge: "C" },
-    { title: copy.dailyAverage, value: `${formatAppNumber(analyticsData.dailyAverage, languageCode, { maximumFractionDigits: 2 })} ${unit}`, subtitle: copy.perActiveDay, badge: "Ø" }
+    {
+      title: copy.totalProduction,
+      value: `${analyticsData.totalQuantity.toLocaleString(appLocale())} ${unitLabel(language)}`,
+      subtitle: copy.outputAccumulation,
+      badge: "Σ",
+    },
+    {
+      title: copy.totalQuantity,
+      value: analyticsData.totalQuantity.toLocaleString(appLocale()),
+      subtitle: copy.quantityAccumulation,
+      badge: "QTY",
+    },
+    {
+      title: copy.totalRecord,
+      value: analyticsData.totalRecord.toLocaleString(appLocale()),
+      subtitle: copy.recordsMatched,
+      badge: "#",
+    },
+    {
+      title: copy.totalOperator,
+      value: analyticsData.totalOperator.toLocaleString(appLocale()),
+      subtitle: copy.uniqueOperator,
+      badge: "OP",
+    },
+    {
+      title: copy.totalProduct,
+      value: analyticsData.totalProduct.toLocaleString(appLocale()),
+      subtitle: copy.uniqueProduct,
+      badge: "SKU",
+    },
+    {
+      title: copy.totalColor,
+      value: analyticsData.totalColor.toLocaleString(appLocale()),
+      subtitle: copy.uniqueColor,
+      badge: "CLR",
+    },
+    {
+      title: copy.today,
+      value: `${analyticsData.productionToday.toLocaleString(appLocale())} ${unitLabel(language)}`,
+      subtitle: copy.todayHint,
+      badge: "D",
+    },
+    {
+      title: copy.week,
+      value: `${analyticsData.productionWeek.toLocaleString(appLocale())} ${unitLabel(language)}`,
+      subtitle: copy.weekHint,
+      badge: "W",
+    },
+    {
+      title: copy.month,
+      value: `${analyticsData.productionMonth.toLocaleString(appLocale())} ${unitLabel(language)}`,
+      subtitle: copy.monthHint,
+      badge: "M",
+    },
+    {
+      title: copy.bestOperator,
+      value: analyticsData.bestOperator,
+      subtitle: copy.byQuantity,
+      badge: "★",
+    },
+    {
+      title: copy.topProduct,
+      value: analyticsData.topProduct,
+      subtitle: copy.byQuantity,
+      badge: "P",
+    },
+    {
+      title: copy.topColor,
+      value: analyticsData.topColor,
+      subtitle: copy.byQuantity,
+      badge: "C",
+    },
+    {
+      title: copy.dailyAverage,
+      value: `${analyticsData.dailyAverage.toLocaleString(appLocale(), {
+        maximumFractionDigits: 2,
+      })} ${unitLabel(language)}`,
+      subtitle: copy.perActiveDay,
+      badge: "Ø",
+    },
   ];
-
   return (
-    <div id="analytics-print-root" className="space-y-6 md:space-y-8 overflow-x-hidden">
+    <div
+      id="analytics-print-root"
+      className="space-y-6 md:space-y-8 overflow-x-hidden"
+    >
       <style>{`
         .analytics-print-only { display: none; }
         @keyframes analyticsCardEnter { from { opacity: .45; transform: translateY(7px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
@@ -727,13 +1611,31 @@ function AnalyticsPage({ session, language }: any) {
       <div className="analytics-print-only border-b-2 border-slate-900 pb-4 mb-5">
         <div className="flex items-start justify-between gap-8">
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-slate-900">{copy.reportTitle}</h1>
-            <p className="mt-2 text-xs font-bold text-slate-600">{copy.period}: {periodText}</p>
-            <p className="mt-1 text-[10px] font-bold text-slate-500">{copy.shift}: {analyticsShift === "Semua" ? copy.all : translateShift(analyticsShift, languageCode)} • {copy.operator}: {analyticsOperator === "Semua" ? copy.all : analyticsOperator} • {copy.product}: {analyticsProduct === "Semua" ? copy.all : analyticsProduct} • {copy.color}: {analyticsColor === "Semua" ? copy.all : analyticsColor}{analyticsSearch ? ` • ${copy.search}: ${analyticsSearch}` : ""}</p>
+            <h1 className="text-2xl font-black tracking-tight text-slate-900">
+              {copy.reportTitle}
+            </h1>
+            <p className="mt-2 text-xs font-bold text-slate-600">
+              {copy.period}: {periodText}
+            </p>
+            <p className="mt-1 text-[10px] font-bold text-slate-500">
+              {copy.shift}:{" "}
+              {analyticsShift === "Semua"
+                ? copy.all
+                : shiftLabel(analyticsShift, language)}{" "}
+              • {copy.operator}:{" "}
+              {analyticsOperator === "Semua" ? copy.all : analyticsOperator} •{" "}
+              {copy.product}:{" "}
+              {analyticsProduct === "Semua" ? copy.all : analyticsProduct} •{" "}
+              {copy.color}:{" "}
+              {analyticsColor === "Semua" ? copy.all : analyticsColor}
+              {analyticsSearch ? ` • ${copy.search}: ${analyticsSearch}` : ""}
+            </p>
           </div>
           <div className="text-right text-[10px] font-bold text-slate-500">
             <p>{copy.generated}</p>
-            <p className="mt-1 text-slate-900">{new Date().toLocaleString(locale)}</p>
+            <p className="mt-1 text-slate-900">
+              {new Date().toLocaleString(appLocale())}
+            </p>
           </div>
         </div>
       </div>
@@ -743,70 +1645,377 @@ function AnalyticsPage({ session, language }: any) {
           <div>
             <div className="flex items-center gap-3">
               <span className="w-3 h-3 rounded-full bg-indigo-600"></span>
-              <h2 className="text-xl md:text-2xl font-black tracking-tight text-slate-900">{copy.title}</h2>
+              <h2 className="text-xl md:text-2xl font-black tracking-tight text-slate-900">
+                {copy.title}
+              </h2>
             </div>
-            <p className="mt-2 text-xs md:text-sm font-medium text-slate-500 max-w-3xl leading-relaxed">{copy.subtitle}</p>
+            <p className="mt-2 text-xs md:text-sm font-medium text-slate-500 max-w-3xl leading-relaxed">
+              {copy.subtitle}
+            </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2.5 w-full lg:w-auto">
-            <button onClick={resetAnalyticsFilters} className="w-full sm:w-auto px-5 py-3 rounded-xl bg-white border border-slate-200 text-xs font-black text-slate-600 hover:bg-slate-50 transition-all active:scale-95 shadow-sm">{copy.reset}</button>
-            <button disabled={analyticsLoading || analyticsPrintMode || Boolean(analyticsError) || processedRecords.length === 0} onClick={handleAnalyticsPrint} className="w-full sm:w-auto px-5 py-3 rounded-xl bg-gradient-to-br from-rose-500 to-red-600 text-white text-xs font-black shadow-lg shadow-red-100 hover:-translate-y-0.5 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0">{copy.exportPdf}</button>
+            <button
+              onClick={resetAnalyticsFilters}
+              className="w-full sm:w-auto px-5 py-3 rounded-xl bg-white border border-slate-200 text-xs font-black text-slate-600 hover:bg-slate-50 transition-all active:scale-95 shadow-sm"
+            >
+              {copy.reset}
+            </button>
+            <button
+              disabled={
+                analyticsLoading ||
+                analyticsPrintMode ||
+                Boolean(analyticsError) ||
+                processedRecords.length === 0
+              }
+              onClick={handleAnalyticsPrint}
+              className="w-full sm:w-auto px-5 py-3 rounded-xl bg-gradient-to-br from-rose-500 to-red-600 text-white text-xs font-black shadow-lg shadow-red-100 hover:-translate-y-0.5 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
+            >
+              {copy.exportPdf}
+            </button>
           </div>
         </div>
       </Card>
 
       <Card className="p-5 md:p-7 analytics-no-print">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="space-y-2"><label className="text-xs font-black text-slate-700 ml-1">{copy.startDate}</label><input type="date" value={analyticsStartDate} onChange={(event) => setAnalyticsStartDate(event.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:bg-white focus:border-indigo-500 transition-all" /></div>
-          <div className="space-y-2"><label className="text-xs font-black text-slate-700 ml-1">{copy.endDate}</label><input type="date" value={analyticsEndDate} onChange={(event) => setAnalyticsEndDate(event.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:bg-white focus:border-indigo-500 transition-all" /></div>
-          <div className="space-y-2"><label className="text-xs font-black text-slate-700 ml-1">{copy.shift}</label><select value={analyticsShift} onChange={(event) => setAnalyticsShift(event.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:bg-white focus:border-indigo-500 transition-all"><option value="Semua">{copy.all}</option><option value="Siang">{isChinese ? "白班" : "Siang"}</option><option value="Malam">{isChinese ? "夜班" : "Malam"}</option></select></div>
-          <div className="space-y-2"><label className="text-xs font-black text-slate-700 ml-1">{copy.operator}</label><select value={analyticsOperator} onChange={(event) => setAnalyticsOperator(event.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:bg-white focus:border-indigo-500 transition-all"><option value="Semua">{copy.all}</option>{analyticsOptions.operators.map((option) => <option key={option} value={option}>{option}</option>)}</select></div>
-          <div className="space-y-2"><label className="text-xs font-black text-slate-700 ml-1">{copy.product}</label><select value={analyticsProduct} onChange={(event) => setAnalyticsProduct(event.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:bg-white focus:border-indigo-500 transition-all"><option value="Semua">{copy.all}</option>{analyticsOptions.products.map((option) => <option key={option} value={option}>{option}</option>)}</select></div>
-          <div className="space-y-2"><label className="text-xs font-black text-slate-700 ml-1">{copy.color}</label><select value={analyticsColor} onChange={(event) => setAnalyticsColor(event.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:bg-white focus:border-indigo-500 transition-all"><option value="Semua">{copy.all}</option>{analyticsOptions.colors.map((option) => <option key={option} value={option}>{option}</option>)}</select></div>
-          <div className="space-y-2"><label className="text-xs font-black text-slate-700 ml-1">{copy.search}</label><div className="relative"><input type="text" value={analyticsSearchInput} onChange={(event) => setAnalyticsSearchInput(event.target.value)} placeholder={copy.searchPlaceholder} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 pr-10 text-sm font-bold outline-none focus:bg-white focus:border-indigo-500 transition-all" />{analyticsSearchInput && <button aria-label={copy.clearSearch} title={copy.clearSearch} onClick={() => setAnalyticsSearchInput("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 font-black">✕</button>}</div></div>
-          <div className="space-y-2"><label className="text-xs font-black text-slate-700 ml-1">{copy.sorting}</label><select value={analyticsSort} onChange={(event) => setAnalyticsSort(event.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:bg-white focus:border-indigo-500 transition-all"><option value="newest">{copy.newest}</option><option value="oldest">{copy.oldest}</option><option value="qty_desc">{copy.qtyHigh}</option><option value="qty_asc">{copy.qtyLow}</option><option value="product_asc">{copy.productAZ}</option><option value="operator_asc">{copy.operatorAZ}</option></select></div>
+          <div className="space-y-2">
+            <label className="text-xs font-black text-slate-700 ml-1">
+              {copy.startDate}
+            </label>
+            <input
+              type="date"
+              value={analyticsStartDate}
+              onChange={(event) => setAnalyticsStartDate(event.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:bg-white focus:border-indigo-500 transition-all"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-black text-slate-700 ml-1">
+              {copy.endDate}
+            </label>
+            <input
+              type="date"
+              value={analyticsEndDate}
+              onChange={(event) => setAnalyticsEndDate(event.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:bg-white focus:border-indigo-500 transition-all"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-black text-slate-700 ml-1">
+              {copy.shift}
+            </label>
+            <select
+              value={analyticsShift}
+              onChange={(event) => setAnalyticsShift(event.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:bg-white focus:border-indigo-500 transition-all"
+            >
+              <option value="Semua">{copy.all}</option>
+              <option value="Siang">{isChinese ? "白班" : "Siang"}</option>
+              <option value="Malam">{isChinese ? "夜班" : "Malam"}</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-black text-slate-700 ml-1">
+              {copy.operator}
+            </label>
+            <select
+              value={analyticsOperator}
+              onChange={(event) => setAnalyticsOperator(event.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:bg-white focus:border-indigo-500 transition-all"
+            >
+              <option value="Semua">{copy.all}</option>
+              {analyticsOptions.operators.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-black text-slate-700 ml-1">
+              {copy.product}
+            </label>
+            <select
+              value={analyticsProduct}
+              onChange={(event) => setAnalyticsProduct(event.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:bg-white focus:border-indigo-500 transition-all"
+            >
+              <option value="Semua">{copy.all}</option>
+              {analyticsOptions.products.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-black text-slate-700 ml-1">
+              {copy.color}
+            </label>
+            <select
+              value={analyticsColor}
+              onChange={(event) => setAnalyticsColor(event.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:bg-white focus:border-indigo-500 transition-all"
+            >
+              <option value="Semua">{copy.all}</option>
+              {analyticsOptions.colors.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-black text-slate-700 ml-1">
+              {copy.search}
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={analyticsSearchInput}
+                onChange={(event) =>
+                  setAnalyticsSearchInput(event.target.value)
+                }
+                placeholder={copy.searchPlaceholder}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 pr-10 text-sm font-bold outline-none focus:bg-white focus:border-indigo-500 transition-all"
+              />
+              {analyticsSearchInput && (
+                <button
+                  onClick={() => setAnalyticsSearchInput("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 font-black"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-black text-slate-700 ml-1">
+              {copy.sorting}
+            </label>
+            <select
+              value={analyticsSort}
+              onChange={(event) => setAnalyticsSort(event.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:bg-white focus:border-indigo-500 transition-all"
+            >
+              <option value="newest">{copy.newest}</option>
+              <option value="oldest">{copy.oldest}</option>
+              <option value="qty_desc">{copy.qtyHigh}</option>
+              <option value="qty_asc">{copy.qtyLow}</option>
+              <option value="product_asc">{copy.productAZ}</option>
+              <option value="operator_asc">{copy.operatorAZ}</option>
+            </select>
+          </div>
         </div>
         <div className="mt-4 min-h-[20px] flex flex-wrap items-center gap-3">
-          {analyticsLoading && <span className="text-[10px] md:text-xs font-black text-indigo-600 animate-pulse">{copy.updating}</span>}
-          {analyticsError && <span className="text-[10px] md:text-xs font-black text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-1.5">{analyticsError}</span>}
-          {!analyticsLoading && !analyticsError && processedRecords.length === 0 && <span className="text-[10px] md:text-xs font-black text-slate-400">{copy.noData}</span>}
+          {analyticsLoading && (
+            <span className="text-[10px] md:text-xs font-black text-indigo-600 animate-pulse">
+              {copy.updating}
+            </span>
+          )}
+          {analyticsError && (
+            <span className="text-[10px] md:text-xs font-black text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-1.5">
+              {analyticsError}
+            </span>
+          )}
+          {!analyticsLoading &&
+            !analyticsError &&
+            processedRecords.length === 0 && (
+              <span className="text-[10px] md:text-xs font-black text-slate-400">
+                {copy.noData}
+              </span>
+            )}
         </div>
       </Card>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 analytics-print-cards">
-        {statisticCards.map((card, index) => <AnalyticsStatCard key={`${card.title}-${index}-${analyticsAnimationKey}`} {...card} animationKey={analyticsAnimationKey} />)}
+        {statisticCards.map((card, index) => (
+          <AnalyticsStatCard
+            key={`${card.title}-${index}-${analyticsAnimationKey}`}
+            {...card}
+            animationKey={analyticsAnimationKey}
+          />
+        ))}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 md:gap-6 analytics-print-grid">
-        <AnalyticsChartCard title={copy.productChart} subtitle={copy.productChartSub}><AnalyticsVerticalBarChart key={`product-${analyticsAnimationKey}`} data={analyticsData.productSeries} emptyLabel={copy.chartEmpty} animationKey={analyticsAnimationKey} locale={locale} /></AnalyticsChartCard>
-        <AnalyticsChartCard title={copy.operatorChart} subtitle={copy.operatorChartSub}><AnalyticsVerticalBarChart key={`operator-${analyticsAnimationKey}`} data={analyticsData.operatorSeries} emptyLabel={copy.chartEmpty} animationKey={analyticsAnimationKey} tone="indigo" locale={locale} /></AnalyticsChartCard>
-        <AnalyticsChartCard title={copy.trendChart} subtitle={copy.trendChartSub}><AnalyticsLineChart key={`trend-${analyticsAnimationKey}`} data={analyticsData.trendSeries} emptyLabel={copy.chartEmpty} animationKey={analyticsAnimationKey} locale={locale} ariaLabel={copy.lineAria} /></AnalyticsChartCard>
-        <AnalyticsChartCard title={copy.colorChart} subtitle={copy.colorChartSub}><AnalyticsDonutChart key={`color-${analyticsAnimationKey}`} data={analyticsData.colorSeries} emptyLabel={copy.chartEmpty} animationKey={analyticsAnimationKey} locale={locale} ariaLabel={copy.donutAria} quantityLabel={copy.quantityLabel} /></AnalyticsChartCard>
-        <AnalyticsChartCard title={copy.shiftChart} subtitle={copy.shiftChartSub}><AnalyticsHorizontalBarChart key={`shift-${analyticsAnimationKey}`} data={analyticsData.shiftSeries} emptyLabel={copy.chartEmpty} animationKey={analyticsAnimationKey} locale={locale} /></AnalyticsChartCard>
-        <AnalyticsChartCard title={copy.top10Chart} subtitle={copy.top10ChartSub}><AnalyticsHorizontalBarChart key={`top10-${analyticsAnimationKey}`} data={analyticsData.topTenProducts} emptyLabel={copy.chartEmpty} animationKey={analyticsAnimationKey} locale={locale} /></AnalyticsChartCard>
+        <AnalyticsChartCard
+          title={copy.productChart}
+          subtitle={copy.productChartSub}
+        >
+          <AnalyticsVerticalBarChart
+            key={`product-${analyticsAnimationKey}`}
+            data={analyticsData.productSeries}
+            emptyLabel={copy.chartEmpty}
+            animationKey={analyticsAnimationKey}
+          />
+        </AnalyticsChartCard>
+        <AnalyticsChartCard
+          title={copy.operatorChart}
+          subtitle={copy.operatorChartSub}
+        >
+          <AnalyticsVerticalBarChart
+            key={`operator-${analyticsAnimationKey}`}
+            data={analyticsData.operatorSeries}
+            emptyLabel={copy.chartEmpty}
+            animationKey={analyticsAnimationKey}
+            tone="indigo"
+          />
+        </AnalyticsChartCard>
+        <AnalyticsChartCard
+          title={copy.trendChart}
+          subtitle={copy.trendChartSub}
+        >
+          <AnalyticsLineChart
+            key={`trend-${analyticsAnimationKey}`}
+            data={analyticsData.trendSeries}
+            emptyLabel={copy.chartEmpty}
+            animationKey={analyticsAnimationKey}
+          />
+        </AnalyticsChartCard>
+        <AnalyticsChartCard
+          title={copy.colorChart}
+          subtitle={copy.colorChartSub}
+        >
+          <AnalyticsDonutChart
+            key={`color-${analyticsAnimationKey}`}
+            data={analyticsData.colorSeries}
+            emptyLabel={copy.chartEmpty}
+            animationKey={analyticsAnimationKey}
+          />
+        </AnalyticsChartCard>
+        <AnalyticsChartCard
+          title={copy.shiftChart}
+          subtitle={copy.shiftChartSub}
+        >
+          <AnalyticsHorizontalBarChart
+            key={`shift-${analyticsAnimationKey}`}
+            data={analyticsData.shiftSeries}
+            emptyLabel={copy.chartEmpty}
+            animationKey={analyticsAnimationKey}
+          />
+        </AnalyticsChartCard>
+        <AnalyticsChartCard
+          title={copy.top10Chart}
+          subtitle={copy.top10ChartSub}
+        >
+          <AnalyticsHorizontalBarChart
+            key={`top10-${analyticsAnimationKey}`}
+            data={analyticsData.topTenProducts}
+            emptyLabel={copy.chartEmpty}
+            animationKey={analyticsAnimationKey}
+          />
+        </AnalyticsChartCard>
       </div>
 
       <Card className="analytics-no-print">
         <div className="px-5 md:px-7 py-5 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div><h3 className="font-black text-slate-900 text-sm md:text-base">{copy.filteredData}</h3><p className="mt-1 text-[10px] md:text-xs font-bold text-slate-400">{copy.filteredDataSub}</p></div>
-          <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-full px-3 py-1.5">{copy.showing} {Math.min(processedRecords.length, 50).toLocaleString(locale)} {copy.of} {processedRecords.length.toLocaleString(locale)}</span>
+          <div>
+            <h3 className="font-black text-slate-900 text-sm md:text-base">
+              {copy.filteredData}
+            </h3>
+            <p className="mt-1 text-[10px] md:text-xs font-bold text-slate-400">
+              {copy.filteredDataSub}
+            </p>
+          </div>
+          <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-full px-3 py-1.5">
+            {copy.showing}{" "}
+            {Math.min(processedRecords.length, 50).toLocaleString(appLocale())}{" "}
+            {copy.of} {processedRecords.length.toLocaleString(appLocale())}
+          </span>
         </div>
 
         <div className="md:hidden divide-y divide-slate-100 px-5">
           {processedRecords.slice(0, 50).map((row) => (
             <div key={row.id} className="py-4 space-y-2">
-              <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm font-black text-slate-900 truncate">{row.product || "-"}</p><p className="text-[10px] font-bold text-slate-400 mt-1">{row.date || "-"} • {translateShift(row.shift, languageCode)} • {row.color || "-"}</p></div><span className="text-sm font-black text-blue-700 shrink-0">{analyticsNumber(row.quantity).toLocaleString(locale)}</span></div>
-              <div className="flex items-center justify-between gap-3 text-[10px] font-bold text-slate-500"><span className="truncate">{row.created_by || "-"}</span><span className="truncate text-right">{row.note || "-"}</span></div>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-black text-slate-900 truncate">
+                    {row.product || "-"}
+                  </p>
+                  <p className="text-[10px] font-bold text-slate-400 mt-1">
+                    {row.date || "-"} • {shiftLabel(row.shift, language)} •{" "}
+                    {row.color || "-"}
+                  </p>
+                </div>
+                <span className="text-sm font-black text-blue-700 shrink-0">
+                  {analyticsNumber(row.quantity).toLocaleString(appLocale())}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3 text-[10px] font-bold text-slate-500">
+                <span className="truncate">{row.created_by || "-"}</span>
+                <span className="truncate text-right">{row.note || "-"}</span>
+              </div>
             </div>
           ))}
-          {!processedRecords.length && <div className="py-12 text-center text-xs font-bold text-slate-400">{copy.noData}</div>}
+          {!processedRecords.length && (
+            <div className="py-12 text-center text-xs font-bold text-slate-400">
+              {copy.noData}
+            </div>
+          )}
         </div>
 
         <div className="hidden md:block overflow-hidden">
           <table className="w-full text-xs text-left border-collapse table-fixed">
-            <thead><tr className="bg-white border-b border-slate-100 text-slate-600 font-black"><th className="px-6 py-4 w-[13%]">{copy.date}</th><th className="px-5 py-4 w-[10%]">{copy.shift}</th><th className="px-5 py-4 w-[19%]">{copy.product}</th><th className="px-5 py-4 w-[13%]">{copy.color}</th><th className="px-5 py-4 text-right w-[10%]">{copy.qty}</th><th className="px-5 py-4 w-[18%]">{copy.operator}</th><th className="px-5 py-4 w-[17%]">{copy.note}</th></tr></thead>
+            <thead>
+              <tr className="bg-white border-b border-slate-100 text-slate-600 font-black">
+                <th className="px-6 py-4 w-[13%]">{copy.date}</th>
+                <th className="px-5 py-4 w-[10%]">{copy.shift}</th>
+                <th className="px-5 py-4 w-[19%]">{copy.product}</th>
+                <th className="px-5 py-4 w-[13%]">{copy.color}</th>
+                <th className="px-5 py-4 text-right w-[10%]">{copy.qty}</th>
+                <th className="px-5 py-4 w-[18%]">{copy.operator}</th>
+                <th className="px-5 py-4 w-[17%]">{copy.note}</th>
+              </tr>
+            </thead>
             <tbody className="divide-y divide-slate-100">
-              {processedRecords.slice(0, 50).map((row, index) => <tr key={row.id} className={index % 2 === 0 ? "bg-white" : "bg-slate-50/60"}><td className="px-6 py-3.5 font-bold text-slate-700 truncate">{row.date || "-"}</td><td className="px-5 py-3.5 font-bold text-slate-600 truncate">{translateShift(row.shift, languageCode)}</td><td className="px-5 py-3.5 font-black text-slate-900 truncate" title={row.product || "-"}>{row.product || "-"}</td><td className="px-5 py-3.5 font-bold text-slate-600 truncate">{row.color || "-"}</td><td className="px-5 py-3.5 text-right font-black text-blue-700">{analyticsNumber(row.quantity).toLocaleString(locale)}</td><td className="px-5 py-3.5 font-bold text-slate-600 truncate" title={row.created_by || "-"}>{row.created_by || "-"}</td><td className="px-5 py-3.5 font-bold text-slate-500 truncate" title={row.note || "-"}>{row.note || "-"}</td></tr>)}
-              {!processedRecords.length && <tr><td colSpan={7} className="px-6 py-12 text-center text-xs font-bold text-slate-400">{copy.noData}</td></tr>}
+              {processedRecords.slice(0, 50).map((row, index) => (
+                <tr
+                  key={row.id}
+                  className={index % 2 === 0 ? "bg-white" : "bg-slate-50/60"}
+                >
+                  <td className="px-6 py-3.5 font-bold text-slate-700 truncate">
+                    {row.date || "-"}
+                  </td>
+                  <td className="px-5 py-3.5 font-bold text-slate-600 truncate">
+                    {row.shift || "-"}
+                  </td>
+                  <td
+                    className="px-5 py-3.5 font-black text-slate-900 truncate"
+                    title={row.product || "-"}
+                  >
+                    {row.product || "-"}
+                  </td>
+                  <td className="px-5 py-3.5 font-bold text-slate-600 truncate">
+                    {row.color || "-"}
+                  </td>
+                  <td className="px-5 py-3.5 text-right font-black text-blue-700">
+                    {analyticsNumber(row.quantity).toLocaleString(appLocale())}
+                  </td>
+                  <td
+                    className="px-5 py-3.5 font-bold text-slate-600 truncate"
+                    title={row.created_by || "-"}
+                  >
+                    {row.created_by || "-"}
+                  </td>
+                  <td
+                    className="px-5 py-3.5 font-bold text-slate-500 truncate"
+                    title={row.note || "-"}
+                  >
+                    {row.note || "-"}
+                  </td>
+                </tr>
+              ))}
+              {!processedRecords.length && (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="px-6 py-12 text-center text-xs font-bold text-slate-400"
+                  >
+                    {copy.noData}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -814,665 +2023,7702 @@ function AnalyticsPage({ session, language }: any) {
 
       {analyticsPrintMode && (
         <div className="analytics-print-only mt-6">
-          <h2 className="text-sm font-black text-slate-900 mb-3">{copy.filteredData} ({processedRecords.length.toLocaleString(locale)} {copy.recordUnit})</h2>
+          <h2 className="text-sm font-black text-slate-900 mb-3">
+            {copy.filteredData} (
+            {processedRecords.length.toLocaleString(appLocale())}{" "}
+            {bi("record", "条记录", language)})
+          </h2>
           <table className="analytics-report-table">
-            <thead><tr><th>{copy.date}</th><th>{copy.shift}</th><th>{copy.product}</th><th>{copy.color}</th><th>{copy.qty}</th><th>{copy.operator}</th><th>{copy.note}</th></tr></thead>
-            <tbody>{processedRecords.map((row) => <tr key={`print-${row.id}`}><td>{row.date || "-"} {row.time || ""}</td><td>{translateShift(row.shift, languageCode)}</td><td>{row.product || "-"}</td><td>{row.color || "-"}</td><td className="text-right">{analyticsNumber(row.quantity).toLocaleString(locale)}</td><td>{row.created_by || "-"}</td><td>{row.note || "-"}</td></tr>)}</tbody>
-            <tfoot><tr><td colSpan={4} className="text-right font-black">{copy.totalProduction}</td><td className="text-right font-black">{analyticsData.totalQuantity.toLocaleString(locale)}</td><td colSpan={2}></td></tr></tfoot>
+            <thead>
+              <tr>
+                <th>{copy.date}</th>
+                <th>{copy.shift}</th>
+                <th>{copy.product}</th>
+                <th>{copy.color}</th>
+                <th>{copy.qty}</th>
+                <th>{copy.operator}</th>
+                <th>{copy.note}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {processedRecords.map((row) => (
+                <tr key={`print-${row.id}`}>
+                  <td>
+                    {row.date || "-"} {row.time || ""}
+                  </td>
+                  <td>{shiftLabel(row.shift, language)}</td>
+                  <td>{row.product || "-"}</td>
+                  <td>{row.color || "-"}</td>
+                  <td className="text-right">
+                    {analyticsNumber(row.quantity).toLocaleString(appLocale())}
+                  </td>
+                  <td>{row.created_by || "-"}</td>
+                  <td>{row.note || "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan={4} className="text-right font-black">
+                  {copy.totalProduction}
+                </td>
+                <td className="text-right font-black">
+                  {analyticsData.totalQuantity.toLocaleString(appLocale())}
+                </td>
+                <td colSpan={2}></td>
+              </tr>
+            </tfoot>
           </table>
 
           <div className="analytics-signature mt-8 grid grid-cols-2 gap-20 text-center text-[10px] font-bold text-slate-700">
-            <div><p>{copy.preparedBy}</p><div className="h-16"></div><div className="border-t border-slate-700 pt-2">{copy.signature}</div></div>
-            <div><p>{copy.approvedBy}</p><div className="h-16"></div><div className="border-t border-slate-700 pt-2">{copy.signature}</div></div>
+            <div>
+              <p>{copy.preparedBy}</p>
+              <div className="h-16"></div>
+              <div className="border-t border-slate-700 pt-2">
+                {copy.signature}
+              </div>
+            </div>
+            <div>
+              <p>{copy.approvedBy}</p>
+              <div className="h-16"></div>
+              <div className="border-t border-slate-700 pt-2">
+                {copy.signature}
+              </div>
+            </div>
           </div>
-          <div className="mt-8 pt-3 border-t border-slate-300 flex justify-between text-[9px] font-bold text-slate-500"><span>{copy.footer}</span><span>{copy.period}: {periodText}</span></div>
+          <div className="mt-8 pt-3 border-t border-slate-300 flex justify-between text-[9px] font-bold text-slate-500">
+            <span>{copy.footer}</span>
+            <span>
+              {copy.period}: {periodText}
+            </span>
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-/** 3. APP UTAMA **/
-function ProductionSystem() {
-  // --- AUTH STATES ---
-  const [session, setSession] = useState<any>(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [emailInput, setEmailInput] = useState(""); 
-  const [passcode, setPasscode] = useState("");
-  const [loginError, setLoginError] = useState("");
-
-  // --- ORIGINAL STATES ---
-  const [language, setLanguage] = useState<AppLanguage>(() => resolveLanguage(localStorage.getItem("app_lang")));
-  const [activeTab, setActiveTab] = useState("production"); 
-  
-  // Inisialisasi records langsung dari localStorage jika data cache lokal tersedia
-  const [records, setRecords] = useState<any[]>(() => {
-    try {
-      const savedRecords = localStorage.getItem("cached_production_records");
-      return savedRecords ? JSON.parse(savedRecords) : [];
-    } catch (e) {
-      return [];
-    }
-  });
-  
-  // Jika cache data lokal ditemukan, set loading ke false agar data langsung tampil tanpa layar berkedip kosong
-  const [loading, setLoading] = useState(() => {
-    return localStorage.getItem("cached_production_records") ? false : true;
-  });
-
-  const [form, setForm] = useState({ date: new Date().toISOString().split('T')[0], color: "", shift: "Siang", product: "", quantity: "", note: "" });
-  const [filterDate, setFilterDate] = useState("");
-  const [filterShift, setFilterShift] = useState("Semua"); 
-  const [searchQuery, setSearchQuery] = useState(""); 
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [tempNote, setTempNote] = useState("");
-  const [displayLimit, setDisplayLimit] = useState(50);
-  const [currentPage, setCurrentPage] = useState(0);
-
-  // --- TAMBAHAN BARU: LOG STATES ---
-  const [logs, setLogs] = useState<any[]>([]);
-  const [logsLoading, setLogsLoading] = useState(false);
-  const [logsPage, setLogsPage] = useState(0);
-  const [logsLimit] = useState(30);
-  const noteUpdateInFlightRef = React.useRef<Set<any>>(new Set());
-
-  const text = {
-    id: {
-      title: "PRODUKSI BUYMORE", subtitle: "Terhubung ke Cloud", add: "Input Produksi", logTitle: "Hasil Produksi",
-      date: "Tanggal", time: "Waktu", color: "Warna", shift: "Shift", product: "Produk", qty: "Qty", note: "Catatan",
-      save: "Simpan Data", export: "Ekspor Excel", action: "Aksi", delete: "Hapus",
-      total: "TOTAL", day: "Siang", night: "Malam", allShift: "Semua Shift", loading: "Sinkronisasi Cloud...", empty: "Tidak ada data di Cloud.",
-      confirmDelete: "Hapus data ini?", alertIncomplete: "Data belum lengkap. Tanggal, produk, dan quantity wajib diisi.", noData: "Tidak ada data untuk kriteria ini.",
-      show: "Tampilkan", logout: "Keluar", enter: "Masuk Sistem", grandTotal: "TOTAL PRODUKSI", user: "Pengguna",
-      navProd: "Produksi", navAnalytics: "Analisis", navLogs: "Log Aktivitas", logTime: "Waktu Sistem", logAction: "Aktivitas", logDesc: "Deskripsi", logEmpty: "Belum ada riwayat aktivitas.",
-      syncing: "MENYINKRONKAN...", privateCloud: "Cloud Produksi Privat", registeredEmail: "Email Terdaftar", securityPasscode: "Kata Sandi Keamanan",
-      loginError: "Akses ditolak. Email atau kata sandi tidak benar.", searchPlaceholder: "Cari produk, catatan, atau pengguna...",
-      saveError: "Data produksi gagal disimpan.", deleteError: "Data produksi gagal dihapus.", updateError: "Catatan gagal diperbarui.", loadError: "Data tidak dapat dimuat.",
-      unknownUser: "PENGGUNA TIDAK DIKENAL", auditFooter: "SISTEM AUDIT LOG BUYMORE", previousPage: "Halaman sebelumnya", nextPage: "Halaman berikutnya",
-      excelSheetName: "Produksi", excelFilePrefix: "Laporan-Produksi-Harian", editNote: "Edit catatan", clearSearch: "Hapus pencarian",
-      languageIndonesia: "Bahasa Indonesia", languageChinese: "中文（普通话）", copyright: "BUYMORE INDUSTRIAL"
-    },
-    cn: {
-      title: "BUYMORE 生产管理", subtitle: "已连接云端", add: "录入生产数据", logTitle: "生产记录",
-      date: "日期", time: "时间", color: "颜色", shift: "班次", product: "产品", qty: "数量", note: "备注",
-      save: "保存数据", export: "导出 Excel", action: "操作", delete: "删除",
-      total: "总计", day: "白班", night: "夜班", allShift: "全部班次", loading: "正在同步云端数据...", empty: "云端暂无数据。",
-      confirmDelete: "确定删除此数据吗？", alertIncomplete: "数据不完整。日期、产品和数量为必填项。", noData: "当前条件下没有数据。",
-      show: "每页显示", logout: "退出登录", enter: "进入系统", grandTotal: "生产总量", user: "操作员",
-      navProd: "生产", navAnalytics: "数据分析", navLogs: "操作日志", logTime: "系统时间", logAction: "操作类型", logDesc: "详细说明", logEmpty: "暂无操作日志。",
-      syncing: "正在同步...", privateCloud: "私有生产云", registeredEmail: "注册邮箱", securityPasscode: "安全密码",
-      loginError: "登录失败，邮箱或密码不正确。", searchPlaceholder: "搜索产品、备注或操作员...",
-      saveError: "生产数据保存失败。", deleteError: "生产数据删除失败。", updateError: "备注更新失败。", loadError: "无法加载数据。",
-      unknownUser: "未知用户", auditFooter: "BUYMORE 操作审计系统", previousPage: "上一页", nextPage: "下一页",
-      excelSheetName: "生产数据", excelFilePrefix: "每日生产报告", editNote: "编辑备注", clearSearch: "清除搜索",
-      languageIndonesia: "Bahasa Indonesia", languageChinese: "中文（普通话）", copyright: "BUYMORE INDUSTRIAL"
-    }
-  } as const;
-  const t = text[language];
-  const locale = appLocale(language);
-  const unit = appUnit(language);
-
-  useEffect(() => {
-    localStorage.setItem("app_lang", language);
-    document.documentElement.lang = language === "cn" ? "zh-CN" : "id";
-    document.title = t.title;
-  }, [language, t.title]);
-
-  // --- AUTH LOGIC ---
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setAuthLoading(false);
+/** FULL OPERATIONS SUITE - ADDITIVE MODULES **/
+type AppRole =
+  "admin" | "supervisor" | "operator" | "qc" | "viewer" | "auditor";
+type AppProfile = {
+  id: string;
+  email?: string | null;
+  full_name?: string | null;
+  role: AppRole;
+  is_active: boolean;
+  language?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+type MasterItem = {
+  id: number | string;
+  category: string;
+  code: string;
+  name: string;
+  is_active: boolean;
+  metadata?: Record<string, any> | null;
+};
+type ProductionAdvancedFields = {
+  work_order_id: string;
+  batch_id: string;
+  machine_code: string;
+  line_code: string;
+  source: string;
+};
+const DEFAULT_ADVANCED_FIELDS: ProductionAdvancedFields = {
+  work_order_id: "",
+  batch_id: "",
+  machine_code: "",
+  line_code: "",
+  source: "MANUAL",
+};
+const APP_ROLES: AppRole[] = [
+  "admin",
+  "supervisor",
+  "operator",
+  "qc",
+  "viewer",
+  "auditor",
+];
+const normalizeText = (value: any) => String(value ?? "").trim();
+const upperText = (value: any) => normalizeText(value).toUpperCase();
+const numberValue = (value: any) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+const currentUserName = (session: any, profile?: AppProfile | null) =>
+  profile?.full_name ||
+  session?.user?.user_metadata?.full_name ||
+  session?.user?.email ||
+  "UNKNOWN";
+const isManagerRole = (role?: AppRole | null) =>
+  role === "admin" || role === "supervisor";
+const canManageQuality = (role?: AppRole | null) =>
+  isManagerRole(role) || role === "qc";
+const safeJson = (value: any, fallback: any = {}) => {
+  if (value && typeof value === "object") return value;
+  try {
+    return JSON.parse(String(value || ""));
+  } catch {
+    return fallback;
+  }
+};
+const makeUuid = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function")
+    return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.getRandomValues === "function"
+  )
+    crypto.getRandomValues(bytes);
+  else
+    for (let index = 0; index < bytes.length; index += 1)
+      bytes[index] = Math.floor(Math.random() * 256);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (value) =>
+    value.toString(16).padStart(2, "0"),
+  ).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+const jakartaDateKey = (value = new Date()) => {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Jakarta",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(value);
+    const map: Record<string, string> = {};
+    parts.forEach((part) => {
+      map[part.type] = part.value;
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const handleLogin = async (e: any) => {
-    e.preventDefault();
-    setLoginError("");
-    const { error } = await supabase.auth.signInWithPassword({
-      email: emailInput, 
-      password: passcode
-    });
-    if (error) {
-      setLoginError(localizeSupabaseError(error, language, t.loginError));
-      setPasscode("");
-    }
-  };
-
-  const handleLogout = async () => {
-    localStorage.removeItem("cached_production_records");
-    setRecords([]);
-    await supabase.auth.signOut();
-  };
-
-  // --- ORIGINAL LOGIC (FETCHNIG & REALTIME) ---
-  const fetchData = async () => {
-    if (!session) return;
-    
-    // PERBAIKAN: Hanya aktifkan loading utama jika records/cache lokal kosong agar tidak flicker (Silent Sync)
-    if (records.length === 0) {
-      setLoading(true);
-    }
-    
-    const from = currentPage * displayLimit;
-    const to = from + displayLimit - 1;
-
-    let query = supabase
-      .from("production_data")
-      .select("*")
-      .order("id", { ascending: false });
-
-    if (filterDate) {
-      query = query.eq("date", filterDate);
-    } else {
-      query = query.range(from, to);
-    }
-
-    const { data, error } = await query;
-
-    if (!error) {
-      const safeData = data || [];
-      setRecords(safeData);
-      localStorage.setItem("cached_production_records", JSON.stringify(safeData));
-    } else {
-      console.error(localizeSupabaseError(error, language, t.loadError));
-    }
-    setLoading(false);
-  };
-
-  // --- TAMBAHAN BARU: FUNGSI AMBIL LOG AKTIVITAS (CLOUD SINKRONISASI) ---
-  const fetchLogs = async () => {
-    if (!session) return;
-    setLogsLoading(true);
-    const from = logsPage * logsLimit;
-    const to = from + logsLimit - 1;
-
-    const { data, error } = await supabase
-      .from("activity_logs")
-      .select("*")
-      .order("id", { ascending: false })
-      .range(from, to);
-
-    if (!error) setLogs(data || []);
-    setLogsLoading(false);
-  };
-
-  useEffect(() => {
-    if (session) {
-      if (activeTab === "production") {
-        fetchData();
-      } else if (activeTab === "logs") {
-        fetchLogs();
-      }
-    }
-  }, [activeTab, currentPage, logsPage, session, filterDate, displayLimit]);
-
-  useEffect(() => {
-    if (!session) return;
-
-    const channel = supabase
-      .channel(`realtime-production-${session.user.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "production_data" }, (payload: any) => {
-        setRecords((previous) => {
-          let updated = [...previous];
-          const eventType = String(payload.eventType || "").toUpperCase();
-          const newRow = payload.new || null;
-          const oldRow = payload.old || null;
-
-          if (eventType === "INSERT" && newRow && currentPage === 0 && (!filterDate || newRow.date === filterDate)) {
-            updated = [newRow, ...updated.filter((row) => row.id !== newRow.id)].slice(0, displayLimit);
-          } else if (eventType === "UPDATE" && newRow) {
-            const exists = updated.some((row) => row.id === newRow.id);
-            const matchesDate = !filterDate || newRow.date === filterDate;
-            if (exists && matchesDate) updated = updated.map((row) => row.id === newRow.id ? newRow : row);
-            else if (exists && !matchesDate) updated = updated.filter((row) => row.id !== newRow.id);
-            else if (!exists && matchesDate && currentPage === 0) updated = [newRow, ...updated].slice(0, displayLimit);
-          } else if (eventType === "DELETE" && oldRow) {
-            updated = updated.filter((row) => row.id !== oldRow.id);
-          }
-
-          localStorage.setItem("cached_production_records", JSON.stringify(updated));
-          return updated;
-        });
+    return `${map.year}-${map.month}-${map.day}`;
+  } catch {
+    return value.toISOString().slice(0, 10);
+  }
+};
+const formatDateTime = (value: any, language = activeLanguage) =>
+  value
+    ? new Date(value).toLocaleString(appLocale(language), {
+        timeZone: "Asia/Jakarta",
       })
-      .subscribe();
-
+    : "-";
+const errorText = (
+  error: any,
+  fallback = bi("Terjadi kesalahan.", "发生错误。"),
+  language = activeLanguage,
+) =>
+  localizeErrorMessage(
+    error?.message || error?.error_description || fallback,
+    language,
+  );
+const INPUT_CLASS =
+  "w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:bg-white focus:border-blue-500 transition-all disabled:opacity-60 disabled:cursor-not-allowed";
+const SMALL_BUTTON =
+  "px-3.5 py-2 rounded-xl border border-slate-200 bg-white text-[10px] font-black text-slate-600 hover:bg-slate-50 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed";
+const FullSuiteSectionTitle = ({ title, subtitle, action }: any) => (
+  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5">
+    <div>
+      <h3 className="text-base md:text-lg font-black text-slate-900 tracking-tight">
+        {title}
+      </h3>
+      {subtitle && (
+        <p className="mt-1 text-xs font-bold text-slate-400 leading-relaxed">
+          {subtitle}
+        </p>
+      )}
+    </div>
+    {action}
+  </div>
+);
+const FullSuiteBadge = ({ children, tone = "slate" }: any) => {
+  const tones: Record<string, string> = {
+    slate: "bg-slate-100 text-slate-700 border-slate-200",
+    blue: "bg-blue-50 text-blue-700 border-blue-100",
+    indigo: "bg-indigo-50 text-indigo-700 border-indigo-100",
+    green: "bg-emerald-50 text-emerald-700 border-emerald-100",
+    amber: "bg-amber-50 text-amber-700 border-amber-100",
+    red: "bg-red-50 text-red-700 border-red-100",
+    violet: "bg-violet-50 text-violet-700 border-violet-100",
+  };
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[9px] md:text-[10px] font-black uppercase tracking-wider ${tones[tone] || tones.slate}`}
+    >
+      {children}
+    </span>
+  );
+};
+const FullSuiteStat = ({ label, value, hint, tone = "blue" }: any) => {
+  const tones: Record<string, string> = {
+    blue: "from-blue-600 to-indigo-700",
+    green: "from-emerald-500 to-teal-600",
+    amber: "from-amber-500 to-orange-600",
+    red: "from-rose-500 to-red-600",
+    violet: "from-violet-500 to-purple-700",
+    slate: "from-slate-600 to-slate-800",
+  };
+  return (
+    <Card className="p-5">
+      <div
+        className={`w-9 h-1 rounded-full bg-gradient-to-r ${tones[tone] || tones.blue} mb-4`}
+      />
+      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+        {label}
+      </p>
+      <p className="mt-2 text-2xl font-black text-slate-900 break-words">
+        {value}
+      </p>
+      {hint && (
+        <p className="mt-2 text-[10px] font-bold text-slate-400 leading-relaxed">
+          {hint}
+        </p>
+      )}
+    </Card>
+  );
+};
+const FullSuiteInput = ({ label, className = "", children }: any) => (
+  <div className={`space-y-2 ${className}`}>
+    <label className="text-[11px] md:text-xs font-black text-slate-700 ml-1">
+      {label}
+    </label>
+    {children}
+  </div>
+);
+const dataValueLabel = (key: string, value: any) => {
+  if (value === null || value === undefined || value === "") return "-";
+  if (key === "shift") return shiftLabel(value);
+  if (key === "status") return statusLabel(value);
+  if (key === "request_type") return activityLabel(value);
+  if (key === "role") return roleLabel(value);
+  if (key === "category") return categoryLabel(value);
+  if (key === "frequency") return frequencyLabel(value);
+  if (key === "channel") return channelLabel(value);
+  if (key === "source") return sourceLabel(value);
+  if (typeof value === "boolean")
+    return value ? bi("Ya", "是") : bi("Tidak", "否");
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+};
+const BilingualDataGrid = ({ data, omit = [] }: any) => {
+  const entries = Object.entries(data || {}).filter(
+    ([key]) => !omit.includes(key),
+  );
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      {entries.map(([key, value]) => (
+        <div
+          key={key}
+          className="rounded-xl bg-slate-50 border border-slate-100 p-3 min-w-0"
+        >
+          <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">
+            {fieldLabel(key)}
+          </p>
+          <p className="mt-1 text-xs font-bold text-slate-800 break-words">
+            {dataValueLabel(key, value)}
+          </p>
+        </div>
+      ))}
+      {!entries.length && (
+        <p className="col-span-full py-4 text-center text-xs font-bold text-slate-400">
+          {bi("Tidak ada detail.", "暂无详情。")}
+        </p>
+      )}
+    </div>
+  );
+};
+function FullSuiteModal({
+  open,
+  title,
+  onClose,
+  children,
+  width = "max-w-3xl",
+}: any) {
+  useEffect(() => {
+    if (!open) return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [open, onClose]);
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-[10000] bg-slate-950/60 backdrop-blur-sm p-3 md:p-6 flex items-center justify-center"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        className={`w-full ${width} max-h-[92vh] overflow-y-auto rounded-3xl bg-white shadow-2xl border border-white/20`}
+      >
+        <div className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-slate-100 px-5 md:px-7 py-4 flex items-center justify-between gap-4">
+          <h3 className="font-black text-slate-900">{title}</h3>
+          <button
+            onClick={onClose}
+            className="w-9 h-9 rounded-xl bg-slate-100 text-slate-600 font-black hover:bg-slate-200"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="p-5 md:p-7">{children}</div>
+      </div>
+    </div>
+  );
+}
+class AppErrorBoundary extends React.Component<
+  any,
+  {
+    hasError: boolean;
+    message: string;
+  }
+> {
+  constructor(props: any) {
+    super(props);
+    this.state = {
+      hasError: false,
+      message: "",
+    };
+  }
+  static getDerivedStateFromError(error: any) {
+    return {
+      hasError: true,
+      message: errorText(
+        error,
+        bi("Komponen tidak dapat dirender.", "组件无法渲染。"),
+      ),
+    };
+  }
+  componentDidCatch(error: any, info: any) {
+    console.error("Application error boundary:", error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-[320px] p-6 flex items-center justify-center">
+          <Card className="max-w-xl p-7 border-l-8 border-l-red-500">
+            <h2 className="text-lg font-black text-slate-900">
+              {bi("Tampilan mengalami gangguan ", "界面发生异常 ")}
+            </h2>
+            <p className="mt-2 text-sm font-bold text-slate-500 leading-relaxed">
+              {this.state.message}
+            </p>
+            <button
+              onClick={() => {
+                this.setState({
+                  hasError: false,
+                  message: "",
+                });
+                window.location.reload();
+              }}
+              className="mt-5 px-5 py-3 rounded-xl bg-slate-900 text-white text-xs font-black"
+            >
+              {bi("Muat Ulang Aman ", "安全重新加载 ")}
+            </button>
+          </Card>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+function useOnlineStatus() {
+  const [online, setOnline] = useState(() =>
+    typeof navigator === "undefined" ? true : navigator.onLine,
+  );
+  useEffect(() => {
+    const handleOnline = () => setOnline(true);
+    const handleOffline = () => setOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+  return online;
+}
+function PresenceIndicator({ session }: any) {
+  const [count, setCount] = useState(1);
+  const [status, setStatus] = useState("CONNECTING");
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    const channel = supabase.channel("production-presence", {
+      config: {
+        presence: {
+          key: session.user.id,
+        },
+      },
+    });
+    channel
+      .on(
+        "presence",
+        {
+          event: "sync",
+        },
+        () => {
+          const state = channel.presenceState();
+          setCount(Object.keys(state || {}).length || 1);
+        },
+      )
+      .subscribe(async (nextStatus) => {
+        setStatus(nextStatus);
+        if (nextStatus === "SUBSCRIBED") {
+          await channel.track({
+            user_id: session.user.id,
+            email: session.user.email,
+            online_at: new Date().toISOString(),
+          });
+        }
+      });
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [displayLimit, currentPage, filterDate, session]);
-
-  useEffect(() => {
-    if (!session) return;
-
-    const logsChannel = supabase
-      .channel(`realtime-activity-logs-${session.user.id}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "activity_logs" }, (payload: any) => {
-        if (logsPage !== 0 || !payload.new) return;
-        setLogs((previous) => [payload.new, ...previous.filter((row) => row.id !== payload.new.id)].slice(0, logsLimit));
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(logsChannel);
-    };
-  }, [logsLimit, logsPage, session]);
-
-  // Audit Log dibuat otomatis oleh trigger Supabase agar aman untuk penggunaan concurrent.
-  const handleSubmit = async () => {
-    if (!form.date || !form.product || !form.quantity) return alert(t.alertIncomplete);
-    const currentTime = new Date().toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", hour12: false });
-    const currentUser = session?.user?.user_metadata?.full_name || session?.user?.email || t.unknownUser;
-
-    const formattedData = {
-      ...form,
-      time: currentTime,
-      quantity: parseInt(form.quantity, 10),
-      color: form.color.toUpperCase(),
-      product: form.product.toUpperCase(),
-      note: form.note.toUpperCase(),
-      created_by: currentUser
-    };
-
-    const { error } = await supabase.from("production_data").insert([formattedData]);
-    if (error) {
-      alert(localizeSupabaseError(error, language, t.saveError));
-      return;
-    }
-
-    setForm({ ...form, color: "", product: "", quantity: "", note: "" });
-  };
-
-  const handleDelete = async (id: any) => {
-    if (!confirm(t.confirmDelete)) return;
-
-    const { error } = await supabase.from("production_data").delete().eq("id", id);
-    if (error) {
-      alert(localizeSupabaseError(error, language, t.deleteError));
-      return;
-    }
-
-    setRecords((previous) => {
-      const updated = previous.filter((row) => row.id !== id);
-      localStorage.setItem("cached_production_records", JSON.stringify(updated));
-      return updated;
-    });
-  };
-
-  const handleUpdateNote = async (id: any) => {
-    if (noteUpdateInFlightRef.current.has(id)) return;
-    noteUpdateInFlightRef.current.add(id);
-
-    try {
-      const capitalizedNote = tempNote.toUpperCase();
-      const { error } = await supabase.from("production_data").update({ note: capitalizedNote }).eq("id", id);
-      if (error) {
-        alert(localizeSupabaseError(error, language, t.updateError));
-        return;
-      }
-
-      setEditingId(null);
-      setRecords((previous) => {
-        const updated = previous.map((row) => row.id === id ? { ...row, note: capitalizedNote } : row);
-        localStorage.setItem("cached_production_records", JSON.stringify(updated));
-        return updated;
-      });
-    } finally {
-      noteUpdateInFlightRef.current.delete(id);
-    }
-  };
-
-  const getFilteredRecords = () => {
-    return records.filter(r => {
-      const matchDate = filterDate ? r.date === filterDate : true;
-      const matchShift = filterShift === "Semua" ? true : r.shift === filterShift;
-      
-      const matchesSearch = searchQuery 
-        ? (r.product?.toUpperCase().includes(searchQuery.toUpperCase()) || 
-           r.note?.toUpperCase().includes(searchQuery.toUpperCase()) ||
-           r.created_by?.toUpperCase().includes(searchQuery.toUpperCase())) 
-        : true;
-
-      return matchDate && matchShift && matchesSearch;
-    });
-  };
-
-  const handleExport = () => {
-    const filteredForExport = getFilteredRecords();
-    if (filteredForExport.length === 0) return alert(t.noData);
-    const totalQty = filteredForExport.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
-    const dataExcel = filteredForExport.map(r => ({
-      [t.date]: r.date, [t.time]: r.time, [t.color]: r.color, [t.shift]: translateShift(r.shift, language), [t.product]: r.product, [t.qty]: r.quantity, [t.note]: r.note,
-      [t.user]: r.created_by || "-" 
-    }));
-    dataExcel.push({ [t.product]: t.total, [t.qty]: totalQty });
-    const ws = XLSX.utils.json_to_sheet(dataExcel);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, t.excelSheetName); 
-    XLSX.writeFile(wb, `${t.excelFilePrefix}_${filterDate || (language === "cn" ? "全部日期" : "semua-tanggal")}.xlsx`);
-  };
-
-  // --- RENDER LOGIN SCREEN (MEWAH & RESPONSIVE) ---
-  if (authLoading) return <div className="h-screen flex items-center justify-center font-black text-blue-600 bg-slate-50">{t.syncing}</div>;
-
-  if (!session) {
-    return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-slate-900 relative overflow-hidden p-4">
-        <div className="absolute top-[-10%] left-[-10%] w-[50%] md:w-[40%] h-[40%] bg-blue-600/20 rounded-full blur-[120px] animate-pulse"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] md:w-[40%] h-[40%] bg-indigo-600/20 rounded-full blur-[120px] animate-pulse delay-700"></div>
-        
-        <div className="w-full max-w-md relative z-10">
-          <div className="bg-white/10 backdrop-blur-2xl border border-white/20 rounded-[32px] md:rounded-[40px] p-6 md:p-10 shadow-2xl overflow-hidden relative">
-            <div className="text-center mb-8 md:mb-10">
-              <div className="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-blue-500 to-indigo-700 rounded-2xl md:rounded-3xl flex items-center justify-center shadow-2xl mx-auto mb-4 md:mb-6 transform hover:rotate-12 transition-transform duration-500">
-                <span className="text-white font-black text-3xl md:text-4xl italic">B</span>
-              </div>
-              <h1 className="text-xl md:text-2xl font-black text-white tracking-tighter uppercase">{t.title}</h1>
-              <p className="text-[9px] md:text-[10px] font-bold text-blue-400 tracking-[0.3em] uppercase mt-2 opacity-80">{t.privateCloud}</p>
-            </div>
-
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-blue-300 ml-1 uppercase tracking-widest opacity-60">{t.registeredEmail}</label>
-                <input 
-                  type="email" 
-                  required
-                  value={emailInput}
-                  onChange={(e) => setEmailInput(e.target.value)}
-                  placeholder="name@buymore.com"
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 md:px-6 py-3.5 md:py-4 text-white text-sm outline-none focus:bg-white/10 focus:border-blue-500/50 transition-all placeholder:text-white/20 font-medium"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-blue-300 ml-1 uppercase tracking-widest opacity-60">{t.securityPasscode}</label>
-                <input 
-                  type="password" 
-                  autoFocus
-                  required
-                  value={passcode}
-                  onChange={(e) => setPasscode(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 md:px-6 py-3.5 md:py-4 text-white text-sm outline-none focus:bg-white/10 focus:border-blue-500/50 transition-all placeholder:text-white/20 text-center tracking-[0.3em]"
-                />
-                {loginError && <p className="text-center text-red-400 text-[10px] font-black uppercase animate-bounce mt-2">{loginError}</p>}
-              </div>
-              <Button type="submit" className="w-full py-4 md:py-5 text-xs md:text-sm tracking-widest shadow-2xl shadow-blue-500/20 mt-2">{t.enter}</Button>
-            </form>
-
-            <div className="mt-8 md:mt-10 flex justify-center gap-4 border-t border-white/5 pt-6 md:pt-8">
-              <button onClick={() => setLanguage("id")} className="text-[10px] font-black text-white/20 transition-all hover:text-white/60">{t.languageIndonesia}</button>
-              <button onClick={() => setLanguage("cn")} className="text-[10px] font-black text-white/20 transition-all hover:text-white/60">{t.languageChinese}</button>
-            </div>
-          </div>
-          <p className="text-center mt-6 md:mt-8 text-[9px] md:text-[10px] font-bold text-white/20 uppercase tracking-[0.4em]">{`© ${new Date().getFullYear()} ${t.copyright}`}</p>
-        </div>
-      </div>
-    );
-  }
-
-  // --- RENDER DASHBOARD ---
+  }, [session?.user?.id]);
   return (
-    <div className="min-h-screen bg-[#E3E1E1] pb-12 font-sans text-slate-800 antialiased relative">
-      {/* HEADER WITH LOGOUT & NAVIGATION */}
-      <div className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-100 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-0 md:h-20 flex flex-col md:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-3 md:gap-4 truncate w-full md:w-auto justify-between md:justify-start">
-            <div className="flex items-center gap-3 truncate">
-              <div className="w-10 h-10 md:w-12 md:h-12 bg-black rounded-xl md:rounded-2xl flex items-center justify-center shadow-xl shadow-black/20 shrink-0">
-                <span className="text-white font-black text-xl md:text-2xl italic">B</span>
-              </div>
-              <div className="truncate">
-                <h1 className="text-sm md:text-xl font-black tracking-tight text-slate-900 truncate uppercase">{t.title}</h1>
-                <p className="text-[9px] md:text-[10px] font-bold text-blue-500 tracking-widest uppercase truncate">
-                  {session?.user?.user_metadata?.full_name || session?.user?.email}
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-2 md:hidden shrink-0">
-              <select value={language} onChange={(e) => setLanguage(resolveLanguage(e.target.value))} className="bg-slate-50 border border-slate-100 rounded-xl px-2 py-1.5 text-xs font-bold outline-none cursor-pointer">
-                <option value="id">🇮🇩 Indonesia</option>
-                <option value="cn">🇨🇳 中文</option>
-              </select>
-              <button onClick={handleLogout} className="text-[9px] font-black text-red-500 bg-red-50/50 px-2 py-1.5 rounded-lg transition-all uppercase">
-                ✕
-              </button>
-            </div>
-          </div>
-
-          {/* TAB NAVIGATION MENU */}
-          <div className="flex bg-slate-100 p-1 rounded-xl text-[11px] md:text-xs font-bold w-full md:w-auto shadow-sm">
-            <button 
-              onClick={() => setActiveTab("production")} 
-              className={`flex-1 md:flex-none text-center px-4 py-2 rounded-lg transition-all duration-200 ${activeTab === "production" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
-            >
-              {t.navProd}
-            </button>
-            <button 
-              onClick={() => setActiveTab("analytics")} 
-              className={`flex-1 md:flex-none text-center px-3 md:px-4 py-2 rounded-lg transition-all duration-200 ${activeTab === "analytics" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
-            >
-              {t.navAnalytics}
-            </button>
-            <button 
-              onClick={() => setActiveTab("logs")} 
-              className={`flex-1 md:flex-none text-center px-4 py-2 rounded-lg transition-all duration-200 ${activeTab === "logs" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
-            >
-              {t.navLogs}
-            </button>
-          </div>
-
-          <div className="hidden md:flex items-center gap-4 shrink-0">
-            <select value={language} onChange={(e) => setLanguage(resolveLanguage(e.target.value))} className="bg-slate-50 border border-slate-100 rounded-2xl px-4 py-2 text-sm font-bold outline-none cursor-pointer">
-              <option value="id">🇮🇩 Indonesia</option>
-              <option value="cn">🇨🇳 中文</option>
-            </select>
-            <button onClick={handleLogout} className="text-[10px] font-black text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-all uppercase border-l pl-4 border-slate-100 ml-2">
-              {t.logout}
-            </button>
-          </div>
+    <div
+      className="flex items-center gap-2 text-[9px] font-black uppercase tracking-wider text-slate-500"
+      title={bi(`Realtime: ${status}`, `实时连接：${status}`)}
+    >
+      <span
+        className={`w-2 h-2 rounded-full ${status === "SUBSCRIBED" ? "bg-emerald-500" : "bg-amber-500 animate-pulse"}`}
+      />
+      {count}
+      {bi(" Online ", " 在线 ")}
+    </div>
+  );
+}
+function SavedFiltersControl({ session, pageKey, filters, onApply }: any) {
+  const [items, setItems] = useState<any[]>([]);
+  const [selected, setSelected] = useState("");
+  const load = async () => {
+    if (!session?.user?.id) return;
+    const { data } = await supabase
+      .from("saved_filters")
+      .select("*")
+      .eq("user_id", session.user.id)
+      .eq("page_key", pageKey)
+      .order("created_at", {
+        ascending: false,
+      });
+    setItems(data || []);
+  };
+  useEffect(() => {
+    load();
+  }, [session?.user?.id, pageKey]);
+  const save = async () => {
+    const name = window.prompt(
+      bi("Nama filter tersimpan:", "已保存筛选器名称："),
+    );
+    if (!name?.trim()) return;
+    const { error } = await supabase.from("saved_filters").insert({
+      user_id: session.user.id,
+      page_key: pageKey,
+      name: name.trim(),
+      filters,
+    });
+    if (error) return alert(errorText(error));
+    await load();
+  };
+  const remove = async () => {
+    if (
+      !selected ||
+      !window.confirm(
+        bi("Hapus filter tersimpan ini?", "删除此已保存筛选器吗？"),
+      )
+    )
+      return;
+    await supabase
+      .from("saved_filters")
+      .delete()
+      .eq("id", selected)
+      .eq("user_id", session.user.id);
+    setSelected("");
+    await load();
+  };
+  return (
+    <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+      <select
+        value={selected}
+        onChange={(event) => {
+          const value = event.target.value;
+          setSelected(value);
+          const target = items.find((item) => String(item.id) === value);
+          if (target) onApply(safeJson(target.filters));
+        }}
+        className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-black outline-none min-w-[150px]"
+      >
+        <option value="">{bi("Filter Tersimpan", "已保存筛选器")}</option>
+        {items.map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.name}
+          </option>
+        ))}
+      </select>
+      <button className={SMALL_BUTTON} onClick={save}>
+        {bi("Simpan Filter ", "保存筛选器 ")}
+      </button>
+      <button className={SMALL_BUTTON} disabled={!selected} onClick={remove}>
+        {bi("Hapus ", "删除 ")}
+      </button>
+    </div>
+  );
+}
+function AttachmentManager({
+  session,
+  profile,
+  entityType,
+  entityId,
+  compact = false,
+}: any) {
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const canDelete = isManagerRole(profile?.role);
+  const canUpload = ["admin", "supervisor", "operator", "qc"].includes(
+    profile?.role,
+  );
+  const load = async () => {
+    if (!entityType || !entityId) {
+      setItems([]);
+      return;
+    }
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("attachments")
+      .select("*")
+      .eq("entity_type", entityType)
+      .eq("entity_id", String(entityId))
+      .order("created_at", {
+        ascending: false,
+      });
+    if (!error) setItems(data || []);
+    setLoading(false);
+  };
+  useEffect(() => {
+    load();
+  }, [entityType, entityId, session?.user?.id]);
+  const upload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !session?.user?.id || !entityType || !entityId) return;
+    if (file.size > 10 * 1024 * 1024)
+      return alert(bi("Ukuran maksimal file 10 MB.", "文件最大为 10 MB。"));
+    setUploading(true);
+    try {
+      const cleanName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-");
+      const storagePath = `${session.user.id}/${entityType}/${entityId}/${makeUuid()}-${cleanName}`;
+      const { error: uploadError } = await supabase.storage
+        .from("production-files")
+        .upload(storagePath, file, {
+          upsert: false,
+          contentType: file.type || undefined,
+        });
+      if (uploadError) throw uploadError;
+      const { error: dbError } = await supabase.from("attachments").insert({
+        entity_type: entityType,
+        entity_id: String(entityId),
+        bucket_id: "production-files",
+        storage_path: storagePath,
+        file_name: file.name,
+        mime_type: file.type || null,
+        size_bytes: file.size,
+        uploaded_by: session.user.id,
+      });
+      if (dbError) {
+        await supabase.storage.from("production-files").remove([storagePath]);
+        throw dbError;
+      }
+      await load();
+    } catch (error) {
+      alert(errorText(error, bi("Upload gagal.", "上传失败。")));
+    } finally {
+      setUploading(false);
+    }
+  };
+  const openFile = async (item: any) => {
+    const { data, error } = await supabase.storage
+      .from(item.bucket_id || "production-files")
+      .createSignedUrl(item.storage_path, 120);
+    if (error || !data?.signedUrl)
+      return alert(
+        error?.message || bi("File tidak dapat dibuka.", "无法打开文件。"),
+      );
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  };
+  const remove = async (item: any) => {
+    if (
+      !window.confirm(
+        bi(`Hapus lampiran ${item.file_name}?`, `删除附件 ${item.file_name}？`),
+      )
+    )
+      return;
+    const { error: storageError } = await supabase.storage
+      .from(item.bucket_id || "production-files")
+      .remove([item.storage_path]);
+    if (storageError) return alert(errorText(storageError));
+    const { error } = await supabase
+      .from("attachments")
+      .delete()
+      .eq("id", item.id);
+    if (error) return alert(errorText(error));
+    await load();
+  };
+  return (
+    <div
+      className={
+        compact
+          ? "space-y-3"
+          : "rounded-2xl border border-slate-200 p-4 md:p-5 bg-slate-50/60"
+      }
+    >
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          {!compact && (
+            <p className="text-xs font-black text-slate-800">
+              {bi("Foto & Lampiran", "照片与附件")}
+            </p>
+          )}
+          <p className="text-[10px] font-bold text-slate-400">
+            {loading
+              ? bi("Memuat...", "加载中...")
+              : bi(`${items.length} file`, `${items.length} 个文件`)}
+            {bi("• Maks. 10 MB ", "• 最大 10 MB ")}
+          </p>
         </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 md:px-6 mt-6 md:mt-10">
-        {activeTab === "production" ? (
-          /* TAB 1: RENDER DASHBOARD PRODUKSI */
-          <div className="space-y-6 md:space-y-10">
-            <Card className="p-5 md:p-8 border-l-8 border-l-blue-600">
-              <h2 className="text-sm font-bold text-slate-800 tracking-tight mb-6 md:mb-8 flex items-center gap-2">
-                <span className="w-2 h-2 bg-blue-600 rounded-full"></span> {t.add}
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-                <div className="space-y-1.5 md:space-y-2"><label className="text-xs md:text-sm font-bold text-slate-800 ml-1">{t.date}</label><input type="date" value={form.date} onChange={(e) => setForm({...form, date: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 md:py-3 text-sm focus:bg-white outline-none transition-all font-medium" /></div>
-                <div className="space-y-1.5 md:space-y-2"><label className="text-xs md:text-sm font-bold text-slate-800 ml-1">{t.color}</label><input placeholder="..." value={form.color} onChange={(e) => setForm({...form, color: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 md:py-3 text-sm focus:bg-white outline-none transition-all font-medium uppercase" /></div>
-                <div className="space-y-1.5 md:space-y-2"><label className="text-xs md:text-sm font-bold text-slate-800 ml-1">{t.shift}</label><select value={form.shift} onChange={(e) => setForm({...form, shift: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 md:py-3 text-sm focus:bg-white outline-none transition-all font-bold"><option value="Siang">{t.day}</option><option value="Malam">{t.night}</option></select></div>
-                <div className="space-y-1.5 md:space-y-2"><label className="text-xs md:text-sm font-bold text-slate-800 ml-1">{t.product}</label><input placeholder="..." value={form.product} onChange={(e) => setForm({...form, product: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 md:py-3 text-sm focus:bg-white outline-none transition-all font-medium uppercase" /></div>
-                <div className="space-y-1.5 md:space-y-2"><label className="text-xs md:text-sm font-bold text-slate-800 ml-1">{t.qty}</label><input type="number" placeholder="0" value={form.quantity} onChange={(e) => setForm({...form, quantity: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 md:py-3 text-sm focus:bg-white outline-none transition-all font-black text-blue-700" /></div>
-                <div className="space-y-1.5 md:space-y-2 lg:col-span-1"><label className="text-xs md:text-sm font-bold text-slate-800 ml-1">{t.note}</label><input placeholder="..." value={form.note} onChange={(e) => setForm({...form, note: e.target.value})} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 md:py-3 text-sm focus:bg-white outline-none transition-all font-medium uppercase" /></div>
-                <div className="flex items-end pt-2 md:pt-0"><Button onClick={handleSubmit} className="w-full h-11 md:h-[50px]">{t.save}</Button></div>
-              </div>
-            </Card>
-
-            <Card>
-              <div className="px-5 md:px-8 py-5 md:py-6 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-50/40">
-                <div className="flex items-center gap-4">
-                  <div className="h-10 w-1.5 bg-blue-600 rounded-full"></div>
-                  <h3 className="font-bold text-slate-800 tracking-tight text-base md:text-lg">{t.logTitle}</h3>
-                </div>
-                
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full md:w-auto">
-                  <div className="relative flex-1 sm:flex-none">
-                    <input 
-                      type="text" 
-                      placeholder={t.searchPlaceholder}
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="bg-white border border-slate-200 rounded-2xl px-4 py-2 md:py-2.5 text-xs font-bold outline-none shadow-sm w-full md:w-40 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all uppercase"
-                    />
-                    {searchQuery && (
-                      <button aria-label={t.clearSearch} title={t.clearSearch} onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 font-bold text-xs">✕</button>
-                    )}
-                  </div>
-                  <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="bg-white border border-slate-200 rounded-2xl px-4 py-2 md:py-2.5 text-xs font-bold outline-none shadow-sm flex-1 sm:w-auto" />
-                  <select value={filterShift} onChange={(e) => setFilterShift(e.target.value)} className="bg-white border border-slate-200 rounded-2xl px-4 py-2 md:py-2.5 text-xs font-bold outline-none shadow-sm cursor-pointer flex-1 sm:w-auto">
-                    <option value="Semua">{t.allShift}</option>
-                    <option value="Siang">{t.day}</option>
-                    <option value="Malam">{t.night}</option>
-                  </select>
-                  <Button onClick={handleExport} variant="success" className="text-xs py-2 md:py-2.5">{t.export}</Button>
-                </div>
-              </div>
-
-              <div className="overflow-x-auto w-full scrollbar-thin current-fill">
-                <table className="w-full text-sm text-left border-collapse min-w-[700px] md:min-w-full">
-                  <thead>
-                    <tr className="text-slate-800 text-sm font-bold bg-white border-b border-slate-100">
-                      <th className="px-5 md:px-8 py-4 md:py-6 border-r border-slate-100">{t.date}</th>
-                      <th className="px-4 md:px-6 py-4 md:py-6 border-r border-slate-100">{t.time}</th>
-                      <th className="px-4 md:px-6 py-4 md:py-6 border-r border-slate-100">{t.shift}</th>
-                      <th className="px-4 md:px-6 py-4 md:py-6 border-r border-slate-100">{t.product}</th>
-                      <th className="px-4 md:px-6 py-4 md:py-6 text-right border-r border-slate-100">{t.qty}</th>
-                      <th className="px-4 md:px-6 py-4 md:py-6 border-r border-slate-100">{t.note}</th>
-                      <th className="px-4 md:px-6 py-4 md:py-6 border-r border-slate-100">{t.user}</th>
-                      <th className="px-5 md:px-8 py-4 md:py-6 text-center w-24 md:w-28"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {loading && records.length === 0 ? (
-                      <tr><td colSpan={8} className="px-5 md:px-8 py-24 text-center text-slate-800 font-bold text-sm animate-pulse">{t.loading}</td></tr>
-                    ) : getFilteredRecords().length === 0 ? (
-                      <tr><td colSpan={8} className="px-5 md:px-8 py-20 text-center text-slate-400 font-bold text-sm">{filterDate || filterShift !== "Semua" || searchQuery ? t.noData : t.empty}</td></tr>
-                    ) : getFilteredRecords().map((r, index) => (
-                      <tr key={r.id} className={`group transition-all duration-300 ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'} hover:bg-blue-50/80`}>
-                        <td className="px-5 md:px-8 py-4 md:py-5 font-bold text-slate-800 border-l-4 border-l-transparent group-hover:border-l-blue-600 transition-all border-r border-slate-100 whitespace-nowrap">{r.date}</td>
-                        <td className="px-4 md:px-6 py-4 md:py-5 text-slate-800 font-bold text-xs md:text-sm border-r border-slate-100 whitespace-nowrap">{r.time}</td>
-                        <td className="px-4 md:px-6 py-4 md:py-5 border-r border-slate-100"><span className={`px-3 md:px-4 py-1.5 rounded-full text-xs md:text-sm font-bold whitespace-nowrap ${r.shift === "Siang" ? "bg-amber-100 text-amber-700 shadow-sm shadow-amber-900/5" : "bg-slate-800 text-white shadow-lg shadow-black/10"}`}>{r.shift === "Siang" ? t.day : t.night}</span></td>
-                        <td className="px-4 md:px-6 py-4 md:py-5 border-r border-slate-100"><span className="font-bold text-slate-800 block text-sm leading-tight uppercase">{r.product}</span><span className="text-xs md:text-sm font-bold text-slate-400 uppercase tracking-wider">{r.color}</span></td>
-                        <td className="px-4 md:px-6 py-4 md:py-5 text-right font-bold text-sm md:text-base text-blue-700 border-r border-slate-100">{formatAppNumber(r.quantity, language)}</td>
-                        <td className="px-4 md:px-6 py-4 md:py-5 border-r border-slate-100">
-                          {editingId === r.id ? (
-                            <input aria-label={t.editNote} autoFocus className="bg-white border-2 border-blue-500 rounded-lg px-2.5 py-1 text-xs md:text-sm font-bold text-slate-800 outline-none w-full shadow-[0_0_15px_rgba(59,130,246,0.2)] uppercase" value={tempNote} onChange={(e) => setTempNote(e.target.value)} onBlur={() => handleUpdateNote(r.id)} onKeyDown={(e) => e.key === 'Enter' && handleUpdateNote(r.id)} />
-                          ) : (
-                            <div onClick={() => { setEditingId(r.id); setTempNote(r.note || ""); }} className="group/note cursor-pointer flex items-center gap-2 min-h-[28px]">
-                              <span className="text-slate-800 font-bold text-xs md:text-sm uppercase whitespace-nowrap">{r.note || "-"}</span>
-                              <svg className="w-3.5 h-3.5 text-blue-400 opacity-100 md:opacity-0 group-hover/note:opacity-100 transition-all transform translate-x-0 md:translate-x-[-5px] group-hover/note:translate-x-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                              </svg>
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-4 md:px-6 py-4 md:py-5 border-r border-slate-100 text-slate-800 font-bold text-xs md:text-sm truncate max-w-[120px]">{r.created_by || "-"}</td>
-                        <td className="px-5 md:px-8 py-4 md:py-5 text-center whitespace-nowrap"><button onClick={() => handleDelete(r.id)} className="opacity-100 md:opacity-0 group-hover:opacity-100 transition-all text-red-500 font-bold text-xs bg-red-50 px-3 py-1.5 rounded-lg border border-red-100 hover:bg-red-500 hover:text-white">{t.delete}</button></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="px-5 md:px-8 py-4 bg-slate-50/50 border-t border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
-                 <div className="flex items-center gap-2 order-2 md:order-1">
-                    <button aria-label={t.previousPage} title={t.previousPage} disabled={currentPage === 0 || loading} onClick={() => setCurrentPage(prev => prev - 1)} className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-xl font-bold text-slate-800 hover:bg-slate-50 disabled:opacity-30 transition-all shadow-sm">&lt;</button>
-                    <div className="w-10 h-10 flex items-center justify-center bg-blue-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-200">{currentPage + 1}</div>
-                    <button aria-label={t.nextPage} title={t.nextPage} disabled={records.length < displayLimit || loading} onClick={() => setCurrentPage(prev => prev + 1)} className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-xl font-bold text-slate-800 hover:bg-slate-50 disabled:opacity-30 transition-all shadow-sm">&gt;</button>
-                 </div>
-                 
-                 <div className="flex items-center justify-center bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100/70 px-5 py-2 rounded-2xl shadow-inner shadow-blue-900/5 w-full md:w-auto order-1 md:order-2">
-                    <span className="text-xs font-bold text-indigo-900 tracking-wider uppercase mr-3 opacity-70">{t.grandTotal}</span>
-                    <span className="font-bold text-base md:text-xl bg-gradient-to-br from-blue-700 to-indigo-800 bg-clip-text text-transparent">{formatAppNumber(getFilteredRecords().reduce((sum, item) => sum + (Number(item.quantity) || 0), 0), language)} {unit}</span>
-                 </div>
-                 
-                 <div className="flex items-center justify-between md:justify-end gap-3 w-full md:w-auto order-3">
-                    <span className="text-xs md:text-sm font-bold text-slate-800 uppercase tracking-widest">{t.show}</span>
-                    <select value={displayLimit} onChange={(e) => { setDisplayLimit(Number(e.target.value)); setCurrentPage(0); }} className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs md:text-sm font-bold text-blue-700 outline-none shadow-sm cursor-pointer">
-                      <option value={50}>50</option>
-                      <option value={100}>100</option>
-                      <option value={200}>200</option>
-                      <option value={300}>300</option>
-                    </select>
-                 </div>
-              </div>
-            </Card>
-          </div>
-        ) : activeTab === "analytics" ? (
-          /* TAB 2: RENDER HALAMAN ANALISIS TERISOLASI */
-          <AnalyticsPage session={session} language={language} />
+        {canUpload ? (
+          <label
+            className={`${SMALL_BUTTON} cursor-pointer text-center ${uploading ? "opacity-50 pointer-events-none" : ""}`}
+          >
+            {uploading
+              ? bi("Mengunggah...", "正在上传...")
+              : bi("Tambah Lampiran", "添加附件")}
+            <input
+              type="file"
+              className="hidden"
+              accept="image/jpeg,image/png,image/webp,.pdf,.xlsx,.xls,.doc,.docx,.txt"
+              onChange={upload}
+            />
+          </label>
         ) : (
-          /* TAB 3: RENDER HALAMAN KHUSUS AUDIT LOG AKTIVITAS */
-          <Card>
-            <div className="px-5 md:px-8 py-5 md:py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/40">
-              <div className="flex items-center gap-4">
-                <div className="h-10 w-1.5 bg-indigo-600 rounded-full"></div>
-                <h3 className="font-bold text-slate-800 tracking-tight text-base md:text-lg">{t.navLogs}</h3>
-              </div>
-            </div>
-
-            <div className="block md:hidden divide-y divide-slate-100 max-h-[60vh] overflow-y-auto px-5">
-              {logsLoading && logs.length === 0 ? (
-                <div className="py-12 text-center text-slate-400 font-bold text-sm animate-pulse">{t.loading}</div>
-              ) : logs.length === 0 ? (
-                <div className="py-12 text-center text-slate-400 font-bold text-sm">{t.logEmpty}</div>
-              ) : logs.map((log) => (
-                <div key={log.id} className="py-4 space-y-2">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md truncate max-w-[140px]">{log.user_name || t.unknownUser}</span>
-                    <span className="text-slate-400 font-medium">{formatAppDateTime(log.created_at, language, { hour: "2-digit", minute: "2-digit" })}</span>
-                  </div>
-                  <div className="flex gap-2 items-start">
-                    <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase shrink-0 ${log.activity_type === "INSERT" ? "bg-emerald-100 text-emerald-700" : log.activity_type === "DELETE" ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"}`}>{getActivityTypeLabel(log.activity_type, language)}</span>
-                    <p className="text-xs text-slate-600 font-medium leading-relaxed">{getActivityDescription(log, language)}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-sm text-left border-collapse">
-                <thead>
-                  <tr className="text-slate-800 text-sm font-bold bg-white border-b border-slate-100">
-                    <th className="px-8 py-5 border-r border-slate-100">{t.logTime}</th>
-                    <th className="px-6 py-5 border-r border-slate-100">{t.user}</th>
-                    <th className="px-6 py-5 border-r border-slate-100">{t.logAction}</th>
-                    <th className="px-6 py-5">{t.logDesc}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {logsLoading && logs.length === 0 ? (
-                    <tr><td colSpan={4} className="px-8 py-24 text-center text-slate-800 font-bold text-sm animate-pulse">{t.loading}</td></tr>
-                  ) : logs.length === 0 ? (
-                    <tr><td colSpan={4} className="px-8 py-12 text-center text-slate-400 font-bold text-sm">{t.logEmpty}</td></tr>
-                  ) : logs.map((log, index) => (
-                    <tr key={log.id} className={`transition-all duration-300 ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'} hover:bg-slate-100/80`}>
-                      <td className="px-8 py-4 text-slate-500 font-bold text-xs border-r border-slate-100">{formatAppDateTime(log.created_at, language)}</td>
-                      <td className="px-6 py-4 font-bold text-slate-700 border-r border-slate-100">{log.user_name || t.unknownUser}</td>
-                      <td className="px-6 py-4 border-r border-slate-100">
-                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${log.activity_type === "INSERT" ? "bg-emerald-100 text-emerald-700" : log.activity_type === "DELETE" ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"}`}>{getActivityTypeLabel(log.activity_type, language)}</span>
-                      </td>
-                      <td className="px-6 py-4 text-slate-600 font-medium leading-relaxed">{getActivityDescription(log, language)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="px-5 md:px-8 py-4 bg-slate-50/50 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4">
-              <div className="flex items-center gap-2 w-full sm:w-auto justify-center sm:justify-start">
-                <button aria-label={t.previousPage} title={t.previousPage} disabled={logsPage === 0 || logsLoading} onClick={() => setLogsPage(prev => prev - 1)} className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-xl font-bold text-slate-800 hover:bg-slate-50 disabled:opacity-30 transition-all shadow-sm">&lt;</button>
-                <div className="w-10 h-10 flex items-center justify-center bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-200">{logsPage + 1}</div>
-                <button aria-label={t.nextPage} title={t.nextPage} disabled={logs.length < logsLimit || logsLoading} onClick={() => setLogsPage(prev => prev + 1)} className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 rounded-xl font-bold text-slate-800 hover:bg-slate-50 disabled:opacity-30 transition-all shadow-sm">&gt;</button>
-              </div>
-              <div className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest text-center sm:text-right">{t.auditFooter}</div>
-            </div>
-          </Card>
+          <FullSuiteBadge>{bi("Hanya Baca", "只读")}</FullSuiteBadge>
+        )}
+      </div>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <div
+            key={item.id}
+            className="flex items-center justify-between gap-3 rounded-xl bg-white border border-slate-200 px-3 py-2.5"
+          >
+            <button
+              onClick={() => openFile(item)}
+              className="min-w-0 text-left"
+            >
+              <p className="text-[11px] font-black text-blue-700 truncate">
+                {item.file_name}
+              </p>
+              <p className="text-[9px] font-bold text-slate-400">
+                {Math.max(1, Math.round(numberValue(item.size_bytes) / 1024))}{" "}
+                {bi("KB • ", "KB • ")}
+                {formatDateTime(item.created_at)}
+              </p>
+            </button>
+            {(canDelete || item.uploaded_by === session?.user?.id) && (
+              <button
+                onClick={() => remove(item)}
+                className="text-[10px] font-black text-red-500"
+              >
+                {bi("Hapus ", "删除 ")}
+              </button>
+            )}
+          </div>
+        ))}
+        {!loading && !items.length && (
+          <p className="py-3 text-center text-[10px] font-bold text-slate-400">
+            {bi("Belum ada lampiran. ", "暂无附件。 ")}
+          </p>
         )}
       </div>
     </div>
   );
 }
+const CODE128_PATTERNS = [
+  "212222",
+  "222122",
+  "222221",
+  "121223",
+  "121322",
+  "131222",
+  "122213",
+  "122312",
+  "132212",
+  "221213",
+  "221312",
+  "231212",
+  "112232",
+  "122132",
+  "122231",
+  "113222",
+  "123122",
+  "123221",
+  "223211",
+  "221132",
+  "221231",
+  "213212",
+  "223112",
+  "312131",
+  "311222",
+  "321122",
+  "321221",
+  "312212",
+  "322112",
+  "322211",
+  "212123",
+  "212321",
+  "232121",
+  "111323",
+  "131123",
+  "131321",
+  "112313",
+  "132113",
+  "132311",
+  "211313",
+  "231113",
+  "231311",
+  "112133",
+  "112331",
+  "132131",
+  "113123",
+  "113321",
+  "133121",
+  "313121",
+  "211331",
+  "231131",
+  "213113",
+  "213311",
+  "213131",
+  "311123",
+  "311321",
+  "331121",
+  "312113",
+  "312311",
+  "332111",
+  "314111",
+  "221411",
+  "431111",
+  "111224",
+  "111422",
+  "121124",
+  "121421",
+  "141122",
+  "141221",
+  "112214",
+  "112412",
+  "122114",
+  "122411",
+  "142112",
+  "142211",
+  "241211",
+  "221114",
+  "413111",
+  "241112",
+  "134111",
+  "111242",
+  "121142",
+  "121241",
+  "114212",
+  "124112",
+  "124211",
+  "411212",
+  "421112",
+  "421211",
+  "212141",
+  "214121",
+  "412121",
+  "111143",
+  "111341",
+  "131141",
+  "114113",
+  "114311",
+  "411113",
+  "411311",
+  "113141",
+  "114131",
+  "311141",
+  "411131",
+  "211412",
+  "211214",
+  "211232",
+  "2331112",
+];
+const code128Geometry = (rawValue: any) => {
+  const text =
+    normalizeText(rawValue)
+      .replace(/[^\x20-\x7E]/g, "?")
+      .slice(0, 64) || "-";
+  const values = Array.from(text).map(
+    (character) => character.charCodeAt(0) - 32,
+  );
+  const checksum =
+    (104 + values.reduce((sum, code, index) => sum + code * (index + 1), 0)) %
+    103;
+  const codes = [104, ...values, checksum, 106];
+  const bars: Array<{
+    x: number;
+    width: number;
+  }> = [];
+  let x = 10;
+  codes.forEach((code) => {
+    const pattern = CODE128_PATTERNS[code] || CODE128_PATTERNS[0];
+    Array.from(pattern).forEach((moduleWidth, index) => {
+      const width = Number(moduleWidth);
+      if (index % 2 === 0)
+        bars.push({
+          x,
+          width,
+        });
+      x += width;
+    });
+  });
+  return {
+    text,
+    bars,
+    width: x + 10,
+  };
+};
+function Code128Barcode({ value, title = "" }: any) {
+  const geometry = React.useMemo(() => code128Geometry(value), [value]);
+  return (
+    <div className="rounded-2xl bg-white border border-slate-200 p-4 text-center overflow-hidden">
+      {title && (
+        <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
+          {title}
+        </p>
+      )}
+      <svg
+        viewBox={`0 0 ${geometry.width} 82`}
+        className="w-full h-24"
+        role="img"
+        aria-label={`Barcode ${geometry.text}`}
+        preserveAspectRatio="xMidYMid meet"
+      >
+        <rect x="0" y="0" width={geometry.width} height="82" fill="#ffffff" />
+        {geometry.bars.map((bar, index) => (
+          <rect
+            key={`${bar.x}-${index}`}
+            x={bar.x}
+            y="4"
+            width={bar.width}
+            height="58"
+            fill="#000000"
+          />
+        ))}
+        <text
+          x={geometry.width / 2}
+          y="77"
+          textAnchor="middle"
+          fontSize="9"
+          fontFamily="monospace"
+          fill="#0f172a"
+        >
+          {geometry.text}
+        </text>
+      </svg>
+    </div>
+  );
+}
+const escapeHtmlText = (value: any) =>
+  normalizeText(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+const printBarcodeLabel = (title: string, value: string, subtitle = "") => {
+  const geometry = code128Geometry(value);
+  const rects = geometry.bars
+    .map(
+      (bar) =>
+        `<rect x="${bar.x}" y="8" width="${bar.width}" height="72" fill="#000"/>`,
+    )
+    .join("");
+  const popup = window.open(
+    "",
+    "_blank",
+    "noopener,noreferrer,width=760,height=560",
+  );
+  if (!popup)
+    return alert(
+      bi(
+        "Popup diblokir browser. Izinkan popup untuk mencetak label.",
+        "浏览器阻止了弹出窗口。请允许弹出窗口以打印标签。",
+      ),
+    );
+  popup.document.open();
+  popup.document.write(
+    `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtmlText(title)}</title><style>@page{size:100mm 55mm;margin:4mm}body{font-family:Arial,sans-serif;margin:0;display:flex;align-items:center;justify-content:center}.label{width:92mm;text-align:center}.title{font-size:18px;font-weight:900;margin:0 0 4px}.sub{font-size:10px;color:#475569;margin:0 0 8px}.value{font:700 11px monospace;margin-top:4px;word-break:break-all}svg{width:100%;height:28mm}</style></head><body><div class="label"><p class="title">${escapeHtmlText(title)}</p>${subtitle ? `<p class="sub">${escapeHtmlText(subtitle)}</p>` : ""}<svg viewBox="0 0 ${geometry.width} 92" preserveAspectRatio="xMidYMid meet"><rect width="${geometry.width}" height="92" fill="#fff"/>${rects}</svg><p class="value">${escapeHtmlText(geometry.text)}</p></div><script>window.addEventListener('load',()=>setTimeout(()=>window.print(),250));<\/script></body></html>`,
+  );
+  popup.document.close();
+};
+function QrBarcodeScanner({ open, onClose, onDetected }: any) {
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
+  const streamRef = React.useRef<MediaStream | null>(null);
+  const timerRef = React.useRef<number | null>(null);
+  const [manual, setManual] = useState("");
+  const [message, setMessage] = useState("");
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setMessage("");
+    const start = async () => {
+      try {
+        const BarcodeDetectorClass = (window as any).BarcodeDetector;
+        if (!BarcodeDetectorClass) {
+          setMessage(
+            bi(
+              "Browser ini belum mendukung BarcodeDetector. Gunakan input manual.",
+              "此浏览器尚不支持 BarcodeDetector，请手动输入。",
+            ),
+          );
+          return;
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: {
+              ideal: "environment",
+            },
+          },
+          audio: false,
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+        const detector = new BarcodeDetectorClass({
+          formats: ["qr_code", "code_128", "code_39", "ean_13", "ean_8"],
+        });
+        const scan = async () => {
+          if (cancelled || !videoRef.current) return;
+          try {
+            const results = await detector.detect(videoRef.current);
+            const rawValue = results?.[0]?.rawValue;
+            if (rawValue) {
+              onDetected(rawValue);
+              onClose();
+              return;
+            }
+          } catch {
+            /* scan frame berikutnya */
+          }
+          timerRef.current = window.setTimeout(scan, 350);
+        };
+        scan();
+      } catch (error) {
+        setMessage(
+          errorText(
+            error,
+            bi(
+              "Kamera tidak dapat diakses. Gunakan input manual.",
+              "无法访问摄像头，请手动输入。",
+            ),
+          ),
+        );
+      }
+    };
+    start();
+    return () => {
+      cancelled = true;
+      if (timerRef.current) window.clearTimeout(timerRef.current);
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    };
+  }, [open]);
+  return (
+    <FullSuiteModal
+      open={open}
+      title={bi("Scan QR / Barcode", "扫描二维码 / 条码")}
+      onClose={onClose}
+      width="max-w-xl"
+    >
+      <div className="space-y-4">
+        <div className="aspect-video rounded-2xl overflow-hidden bg-slate-950 flex items-center justify-center">
+          <video
+            ref={videoRef}
+            className="w-full h-full object-cover"
+            playsInline
+            muted
+          />
+        </div>
+        {message && (
+          <p className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
+            {message}
+          </p>
+        )}
+        <div className="flex gap-2">
+          <input
+            value={manual}
+            onChange={(event) => setManual(event.target.value)}
+            placeholder={bi(
+              "Contoh: WO:WO-001 atau BATCH:B-01",
+              "示例：WO:WO-001 或 BATCH:B-01",
+            )}
+            className={INPUT_CLASS}
+          />
+          <button
+            onClick={() => {
+              if (manual.trim()) {
+                onDetected(manual.trim());
+                onClose();
+              }
+            }}
+            className="px-5 rounded-xl bg-slate-900 text-white text-xs font-black"
+          >
+            {bi("Gunakan ", "使用 ")}
+          </button>
+        </div>
+      </div>
+    </FullSuiteModal>
+  );
+}
+function MfaManagement({ session }: any) {
+  const [factors, setFactors] = useState<any[]>([]);
+  const [aal, setAal] = useState<any>(null);
+  const [enrollment, setEnrollment] = useState<any>(null);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = async () => {
+    const [factorResult, aalResult] = await Promise.all([
+      supabase.auth.mfa.listFactors(),
+      supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+    ]);
+    setFactors([
+      ...(factorResult.data?.totp || []),
+      ...(factorResult.data?.phone || []),
+    ]);
+    setAal(aalResult.data || null);
+  };
+  useEffect(() => {
+    load();
+  }, [session?.user?.id]);
+  const enroll = async () => {
+    setBusy(true);
+    const { data, error } = await supabase.auth.mfa.enroll({
+      factorType: "totp",
+      friendlyName: `BUYMORE-${new Date().toISOString().slice(0, 10)}`,
+    });
+    setBusy(false);
+    if (error) return alert(errorText(error));
+    setEnrollment(data);
+  };
+  const verify = async () => {
+    if (!enrollment?.id || !code.trim()) return;
+    setBusy(true);
+    const { error } = await supabase.auth.mfa.challengeAndVerify({
+      factorId: enrollment.id,
+      code: code.trim(),
+    });
+    setBusy(false);
+    if (error) return alert(errorText(error));
+    setEnrollment(null);
+    setCode("");
+    await supabase.auth.refreshSession();
+    await load();
+    alert(bi("MFA berhasil diaktifkan.", "MFA 已成功启用。"));
+  };
+  const remove = async (factorId: string) => {
+    if (
+      !window.confirm(bi("Nonaktifkan faktor MFA ini?", "停用此 MFA 因子吗？"))
+    )
+      return;
+    const { error } = await supabase.auth.mfa.unenroll({
+      factorId,
+    });
+    if (error) return alert(errorText(error));
+    await load();
+  };
+  return (
+    <Card className="p-5 md:p-7">
+      <FullSuiteSectionTitle
+        title={bi("Multi-Factor Authentication", "多重身份验证")}
+        subtitle={bi(
+          "TOTP melalui aplikasi authenticator. Direkomendasikan untuk Admin dan Supervisor.",
+          "通过身份验证器应用使用 TOTP。建议管理员和主管启用。",
+        )}
+        action={
+          <FullSuiteBadge
+            tone={aal?.currentLevel === "aal2" ? "green" : "amber"}
+          >
+            {aal?.currentLevel || "aal1"}
+          </FullSuiteBadge>
+        }
+      />
+      <div className="space-y-3">
+        {factors.map((factor) => (
+          <div
+            key={factor.id}
+            className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3"
+          >
+            <div>
+              <p className="text-xs font-black text-slate-800">
+                {factor.friendly_name || factor.factor_type}
+              </p>
+              <p className="text-[9px] font-bold text-slate-400">
+                {statusLabel(factor.status)} •{" "}
+                {String(factor.factor_type || "-").toUpperCase()}
+              </p>
+            </div>
+            <button
+              onClick={() => remove(factor.id)}
+              className="text-[10px] font-black text-red-500"
+            >
+              {bi("Hapus ", "删除 ")}
+            </button>
+          </div>
+        ))}
+        {!factors.length && (
+          <p className="text-xs font-bold text-slate-400">
+            {bi(
+              "Belum ada faktor MFA terverifikasi. ",
+              "暂无已验证的 MFA 因子。 ",
+            )}
+          </p>
+        )}
+        {!enrollment ? (
+          <button disabled={busy} onClick={enroll} className={SMALL_BUTTON}>
+            {bi("Tambah TOTP ", "添加 TOTP ")}
+          </button>
+        ) : (
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 space-y-4">
+            <p className="text-xs font-black text-blue-900">
+              {bi(
+                "Pindai QR dengan Google Authenticator, Microsoft Authenticator, 1Password, atau aplikasi TOTP lain. ",
+                "使用 Google Authenticator、Microsoft Authenticator、1Password 或其他 TOTP 应用扫描二维码。 ",
+              )}
+            </p>
+            {enrollment.totp?.qr_code && (
+              <img
+                src={enrollment.totp.qr_code}
+                alt={bi("QR MFA", "MFA 二维码")}
+                className="w-48 h-48 bg-white p-2 rounded-xl mx-auto"
+              />
+            )}
+            <p className="text-[9px] font-mono break-all text-slate-500">
+              {enrollment.totp?.secret}
+            </p>
+            <div className="flex gap-2">
+              <input
+                value={code}
+                onChange={(event) => setCode(event.target.value)}
+                inputMode="numeric"
+                maxLength={8}
+                placeholder={bi("Kode 6 digit", "6 位验证码")}
+                className={INPUT_CLASS}
+              />
+              <button
+                disabled={busy}
+                onClick={verify}
+                className="px-5 rounded-xl bg-blue-600 text-white text-xs font-black"
+              >
+                {bi("Verifikasi ", "验证 ")}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+function RecordDetailModal({ open, record, onClose, session, profile }: any) {
+  const [logs, setLogs] = useState<any[]>([]);
+  useEffect(() => {
+    if (!open || !record?.id) return;
+    supabase
+      .from("activity_logs")
+      .select("*")
+      .eq("table_name", "production_data")
+      .eq("record_id", String(record.id))
+      .order("created_at", {
+        ascending: false,
+      })
+      .limit(100)
+      .then(({ data }) => setLogs(data || []));
+  }, [open, record?.id]);
+  return (
+    <FullSuiteModal
+      open={open}
+      title={bi(
+        `Detail Produksi #${record?.id || ""}`,
+        `生产详情 #${record?.id || ""}`,
+      )}
+      onClose={onClose}
+      width="max-w-5xl"
+    >
+      {record && (
+        <div className="space-y-5">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              [bi("Tanggal", "日期"), record.date],
+              [bi("Waktu", "时间"), record.time],
+              [bi("Shift", "班次"), shiftLabel(record.shift)],
+              [bi("Produk", "产品"), record.product],
+              [bi("Warna", "颜色"), record.color],
+              [bi("Quantity", "数量"), `${formatNumber(record.quantity)} ${unitLabel()}`],
+              [bi("Operator", "操作员"), record.created_by],
+              [bi("Versi", "版本"), record.version || 1],
+              [bi("Mesin", "机器"), record.machine_code],
+              [bi("Line", "产线"), record.line_code],
+              [bi("Work Order", "工单"), record.work_order_id],
+              [bi("Batch", "批次"), record.batch_id],
+            ].map(([label, value]) => (
+              <div
+                key={String(label)}
+                className="rounded-xl bg-slate-50 border border-slate-100 p-3"
+              >
+                <p className="text-[9px] font-black text-slate-400 uppercase">
+                  {label}
+                </p>
+                <p className="mt-1 text-xs font-black text-slate-800 break-words">
+                  {String(value ?? "-")}
+                </p>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-xl border border-slate-200 p-4">
+            <p className="text-[9px] font-black text-slate-400 uppercase">
+              {bi("Catatan ", "备注 ")}
+            </p>
+            <p className="mt-2 text-sm font-bold text-slate-800">
+              {record.note || "-"}
+            </p>
+          </div>
+          <AttachmentManager
+            session={session}
+            profile={profile}
+            entityType="production"
+            entityId={record.id}
+          />
+          <div>
+            <p className="text-xs font-black text-slate-900 mb-3">
+              {bi("Riwayat Perubahan ", "变更历史 ")}
+            </p>
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {logs.map((log) => (
+                <div
+                  key={log.id}
+                  className="rounded-xl border border-slate-200 p-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <FullSuiteBadge
+                      tone={
+                        log.activity_type === "DELETE"
+                          ? "red"
+                          : log.activity_type === "INSERT"
+                            ? "green"
+                            : "blue"
+                      }
+                    >
+                      {activityLabel(
+                        log.metadata?.event_subtype || log.activity_type,
+                      )}
+                    </FullSuiteBadge>
+                    <span className="text-[9px] font-bold text-slate-400">
+                      {formatDateTime(log.created_at)}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-[11px] font-bold text-slate-600">
+                    {auditDescription(log)}
+                  </p>
+                  <p className="mt-1 text-[9px] font-bold text-slate-400">
+                    {log.user_name}
+                  </p>
+                </div>
+              ))}
+              {!logs.length && (
+                <p className="text-xs font-bold text-slate-400">
+                  {bi("Belum ada riwayat. ", "暂无历史记录。 ")}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </FullSuiteModal>
+  );
+}
+function ProductionTargetsPage({ session, profile }: any) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [workOrders, setWorkOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({
+    target_date: jakartaDateKey(),
+    shift: "Siang",
+    product: "",
+    target_quantity: "",
+    work_order_id: "",
+    note: "",
+  });
+  const [filterDate, setFilterDate] = useState(jakartaDateKey());
+  const manager = isManagerRole(profile?.role);
+  const load = async () => {
+    setLoading(true);
+    const [targetResult, woResult] = await Promise.all([
+      supabase
+        .from("v_production_target_progress")
+        .select("*")
+        .order("target_date", {
+          ascending: false,
+        })
+        .order("created_at", {
+          ascending: false,
+        })
+        .limit(500),
+      supabase
+        .from("work_orders")
+        .select("id,code,product,status")
+        .in("status", ["PLANNED", "IN_PROGRESS", "PAUSED"])
+        .order("code"),
+    ]);
+    if (targetResult.error) alert(errorText(targetResult.error));
+    setRows(targetResult.data || []);
+    setWorkOrders(woResult.data || []);
+    setLoading(false);
+  };
+  useEffect(() => {
+    load();
+  }, []);
+  const save = async () => {
+    const quantity = Math.floor(numberValue(form.target_quantity));
+    if (!form.target_date || !form.product.trim() || quantity <= 0)
+      return alert(
+        bi(
+          "Tanggal, produk, dan target quantity wajib diisi.",
+          "日期、产品和目标数量为必填项。",
+        ),
+      );
+    const { error } = await supabase.from("production_targets").insert({
+      target_date: form.target_date,
+      shift: form.shift,
+      product: upperText(form.product),
+      target_quantity: quantity,
+      work_order_id: form.work_order_id || null,
+      note: upperText(form.note) || null,
+      created_by: session.user.id,
+    });
+    if (error) return alert(errorText(error));
+    setForm((previous) => ({
+      ...previous,
+      product: "",
+      target_quantity: "",
+      note: "",
+    }));
+    await load();
+  };
+  const remove = async (id: any) => {
+    if (!manager || !window.confirm(bi("Hapus target ini?", "删除此目标吗？")))
+      return;
+    const { error } = await supabase
+      .from("production_targets")
+      .delete()
+      .eq("id", id);
+    if (error) return alert(errorText(error));
+    await load();
+  };
+  const filtered = rows.filter(
+    (row) => !filterDate || row.target_date === filterDate,
+  );
+  const summary = filtered.reduce(
+    (acc, row) => {
+      acc.target += numberValue(row.target_quantity);
+      acc.actual += numberValue(row.actual_quantity);
+      if (numberValue(row.actual_quantity) >= numberValue(row.target_quantity))
+        acc.reached += 1;
+      return acc;
+    },
+    {
+      target: 0,
+      actual: 0,
+      reached: 0,
+    },
+  );
+  const achievement = summary.target
+    ? (summary.actual / summary.target) * 100
+    : 0;
+  const statusFor = (row: any) => {
+    const target = numberValue(row.target_quantity);
+    const actual = numberValue(row.actual_quantity);
+    if (actual >= target && target > 0) return ["TERCAPAI", "green"];
+    if (actual <= 0) return ["BELUM MULAI", "slate"];
+    if (actual / Math.max(target, 1) >= 0.75) return ["ON TRACK", "blue"];
+    return ["TERTINGGAL", "amber"];
+  };
+  const estimateFor = (row: any) => {
+    const target = numberValue(row.target_quantity);
+    const actual = numberValue(row.actual_quantity);
+    if (target > 0 && actual >= target) return bi("Selesai", "完成");
+    if (
+      row.target_date !== jakartaDateKey() ||
+      actual <= 0 ||
+      !row.first_production_at
+    )
+      return bi("Belum cukup data", "数据不足");
+    const first = new Date(row.first_production_at).getTime();
+    const elapsedHours = Math.max((Date.now() - first) / 3_600_000, 0.25);
+    const hourlyRate = actual / elapsedHours;
+    if (!Number.isFinite(hourlyRate) || hourlyRate <= 0)
+      return bi("Belum cukup data", "数据不足");
+    const remainingHours = Math.max((target - actual) / hourlyRate, 0);
+    const estimated = new Date(Date.now() + remainingHours * 3_600_000);
+    const time = estimated.toLocaleTimeString(appLocale(), {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Asia/Jakarta",
+    });
+    return bi(`± ${time} WIB`, `约 ${time}（雅加达时间）`);
+  };
+  const shiftComparison = ["Siang", "Malam"].map((shift) => {
+    const shiftRows = filtered.filter((row) => row.shift === shift);
+    const target = shiftRows.reduce(
+      (sum, row) => sum + numberValue(row.target_quantity),
+      0,
+    );
+    const actual = shiftRows.reduce(
+      (sum, row) => sum + numberValue(row.actual_quantity),
+      0,
+    );
+    return {
+      shift,
+      target,
+      actual,
+      achievement: target ? (actual / target) * 100 : 0,
+    };
+  });
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <FullSuiteStat
+          label={bi("Target", "目标")}
+          value={`${summary.target.toLocaleString(appLocale())} ${unitLabel()}`}
+          hint={filterDate || bi("Semua tanggal", "全部日期")}
+          tone="violet"
+        />
+        <FullSuiteStat
+          label={bi("Aktual", "实际")}
+          value={`${summary.actual.toLocaleString(appLocale())} ${unitLabel()}`}
+          hint={bi(
+            "Dihitung dari production_data",
+            "根据 production_data 计算",
+          )}
+          tone="blue"
+        />
+        <FullSuiteStat
+          label={bi("Pencapaian", "达成率")}
+          value={formatPercent(achievement, 1)}
+          hint={bi(
+            `Selisih ${(summary.actual - summary.target).toLocaleString(appLocale())} ${unitLabel("id")}`,
+            `差额 ${(summary.actual - summary.target).toLocaleString(appLocale())} ${unitLabel("cn")}`,
+          )}
+          tone={achievement >= 100 ? "green" : "amber"}
+        />
+        <FullSuiteStat
+          label={bi("Target Tercapai", "已达成目标")}
+          value={summary.reached.toLocaleString(appLocale())}
+          hint={bi(
+            `${filtered.length} target aktif`,
+            `${filtered.length} 个启用目标`,
+          )}
+          tone="green"
+        />
+      </div>
 
-const root = ReactDOM.createRoot(document.getElementById("root")!);
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {shiftComparison.map((item) => (
+          <Card key={item.shift} className="p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  {bi("Shift ", "班次 ")}
+                  {shiftLabel(item.shift)}
+                </p>
+                <p className="mt-2 text-xl font-black text-slate-900">
+                  {item.actual.toLocaleString(appLocale())} /{" "}
+                  {item.target.toLocaleString(appLocale())}
+                  {unitLabel()}
+                </p>
+                <p className="mt-1 text-[10px] font-bold text-slate-400">
+                  {bi("Aktual / Target ", "实际 / 目标 ")}
+                </p>
+              </div>
+              <FullSuiteBadge
+                tone={
+                  item.achievement >= 100
+                    ? "green"
+                    : item.achievement >= 75
+                      ? "blue"
+                      : "amber"
+                }
+              >
+                {formatPercent(item.achievement, 1)}
+              </FullSuiteBadge>
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      <Card className="p-5 md:p-7">
+        <FullSuiteSectionTitle
+          title={bi("Target Produksi vs Aktual", "生产目标与实际")}
+          subtitle={bi(
+            "Target disimpan terpisah dan aktual dihitung langsung dari data produksi.",
+            "目标独立保存，实际产量直接根据生产数据计算。",
+          )}
+          action={
+            <div className="flex gap-2">
+              <input
+                type="date"
+                value={filterDate}
+                onChange={(event) => setFilterDate(event.target.value)}
+                className={INPUT_CLASS}
+              />
+              <button onClick={load} className={SMALL_BUTTON}>
+                {bi("Muat Ulang ", "刷新 ")}
+              </button>
+            </div>
+          }
+        />
+        {manager && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3 mb-6 rounded-2xl bg-slate-50 border border-slate-100 p-4">
+            <FullSuiteInput label={bi("Tanggal", "日期")}>
+              <input
+                type="date"
+                value={form.target_date}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    target_date: event.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              />
+            </FullSuiteInput>
+            <FullSuiteInput label={bi("Shift", "班次")}>
+              <select
+                value={form.shift}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    shift: event.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              >
+                <option value="Siang">{bi("Siang", "白班")}</option>
+                <option value="Malam">{bi("Malam", "夜班")}</option>
+              </select>
+            </FullSuiteInput>
+            <FullSuiteInput label={bi("Produk", "产品")}>
+              <input
+                value={form.product}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    product: event.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+                placeholder={bi("Kode produk", "产品代码")}
+              />
+            </FullSuiteInput>
+            <FullSuiteInput label={bi("Target Qty", "目标数量")}>
+              <input
+                type="number"
+                min="1"
+                value={form.target_quantity}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    target_quantity: event.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              />
+            </FullSuiteInput>
+            <FullSuiteInput label={bi("Work Order", "工单")}>
+              <select
+                value={form.work_order_id}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    work_order_id: event.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              >
+                <option value="">{bi("Tanpa WO", "无工单")}</option>
+                {workOrders.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.code} • {item.product}
+                  </option>
+                ))}
+              </select>
+            </FullSuiteInput>
+            <div className="flex items-end">
+              <button
+                onClick={save}
+                className="w-full px-4 py-3 rounded-xl bg-violet-600 text-white text-xs font-black"
+              >
+                {bi("Tambah Target ", "添加目标 ")}
+              </button>
+            </div>
+            <FullSuiteInput
+              label={bi("Catatan", "备注")}
+              className="sm:col-span-2 xl:col-span-6"
+            >
+              <input
+                value={form.note}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    note: event.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+                placeholder={bi("Catatan target", "目标备注")}
+              />
+            </FullSuiteInput>
+          </div>
+        )}
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-xs">
+            <thead>
+              <tr className="text-left border-b border-slate-200 text-slate-500">
+                <th className="p-3">{bi("Tanggal", "日期")}</th>
+                <th className="p-3">{bi("Shift", "班次")}</th>
+                <th className="p-3">{bi("Produk", "产品")}</th>
+                <th className="p-3">{bi("WO", "工单")}</th>
+                <th className="p-3 text-right">{bi("Target", "目标")}</th>
+                <th className="p-3 text-right">{bi("Aktual", "实际")}</th>
+                <th className="p-3 text-right">{bi("Selisih", "差额")}</th>
+                <th className="p-3">{bi("Status", "状态")}</th>
+                <th className="p-3">{bi("Estimasi", "预计")}</th>
+                <th className="p-3"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filtered.map((row) => {
+                const status = statusFor(row);
+                return (
+                  <tr key={row.id} className="hover:bg-slate-50">
+                    <td className="p-3 font-bold">{row.target_date}</td>
+                    <td className="p-3">{shiftLabel(row.shift)}</td>
+                    <td className="p-3 font-black">{row.product}</td>
+                    <td className="p-3">{row.work_order_code || "-"}</td>
+                    <td className="p-3 text-right font-black">
+                      {numberValue(row.target_quantity).toLocaleString(
+                        appLocale(),
+                      )}
+                    </td>
+                    <td className="p-3 text-right font-black text-blue-700">
+                      {numberValue(row.actual_quantity).toLocaleString(
+                        appLocale(),
+                      )}
+                    </td>
+                    <td className="p-3 text-right font-black">
+                      {numberValue(row.gap_quantity).toLocaleString(
+                        appLocale(),
+                      )}
+                    </td>
+                    <td className="p-3">
+                      <FullSuiteBadge tone={status[1]}>
+                        {statusLabel(status[0])}
+                      </FullSuiteBadge>
+                    </td>
+                    <td className="p-3 text-[10px] font-black text-slate-500">
+                      {estimateFor(row)}
+                    </td>
+                    <td className="p-3 text-right">
+                      {manager && (
+                        <button
+                          onClick={() => remove(row.id)}
+                          className="text-red-500 font-black"
+                        >
+                          {bi("Hapus ", "删除 ")}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {!loading && !filtered.length && (
+                <tr>
+                  <td
+                    colSpan={10}
+                    className="p-12 text-center font-bold text-slate-400"
+                  >
+                    {bi("Belum ada target. ", "暂无目标。 ")}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+function QualityControlPage({ session, profile }: any) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [defects, setDefects] = useState<MasterItem[]>([]);
+  const [selected, setSelected] = useState<any>(null);
+  const [form, setForm] = useState({
+    production_id: "",
+    inspection_date: jakartaDateKey(),
+    shift: "Siang",
+    product: "",
+    inspected_quantity: "",
+    good_quantity: "",
+    reject_quantity: "0",
+    rework_quantity: "0",
+    defect_type: "",
+    defect_cause: "",
+    corrective_action: "",
+    note: "",
+  });
+  const canWrite = canManageQuality(profile?.role);
+  const load = async () => {
+    const [qcResult, defectResult] = await Promise.all([
+      supabase
+        .from("production_quality")
+        .select("*")
+        .order("inspection_date", {
+          ascending: false,
+        })
+        .order("created_at", {
+          ascending: false,
+        })
+        .limit(500),
+      supabase
+        .from("master_items")
+        .select("*")
+        .eq("category", "DEFECT_TYPE")
+        .eq("is_active", true)
+        .order("name"),
+    ]);
+    if (qcResult.error) alert(errorText(qcResult.error));
+    setRows(qcResult.data || []);
+    setDefects((defectResult.data || []) as MasterItem[]);
+  };
+  useEffect(() => {
+    load();
+  }, []);
+  const save = async () => {
+    const inspected = Math.floor(numberValue(form.inspected_quantity));
+    const good = Math.floor(numberValue(form.good_quantity));
+    const reject = Math.floor(numberValue(form.reject_quantity));
+    const rework = Math.floor(numberValue(form.rework_quantity));
+    if (!form.inspection_date || !form.product.trim() || inspected <= 0)
+      return alert(
+        bi(
+          "Tanggal, produk, dan inspected quantity wajib diisi.",
+          "日期、产品和检验数量为必填项。",
+        ),
+      );
+    if (good + reject + rework !== inspected)
+      return alert(
+        bi(
+          "Good + Reject + Rework harus sama dengan Inspected Quantity.",
+          "良品 + 不良品 + 返工品必须等于检验数量。",
+        ),
+      );
+    const { data, error } = await supabase
+      .from("production_quality")
+      .insert({
+        production_id: form.production_id ? Number(form.production_id) : null,
+        inspection_date: form.inspection_date,
+        shift: form.shift,
+        product: upperText(form.product),
+        inspected_quantity: inspected,
+        good_quantity: good,
+        reject_quantity: reject,
+        rework_quantity: rework,
+        defect_type: upperText(form.defect_type) || null,
+        defect_cause: upperText(form.defect_cause) || null,
+        corrective_action: upperText(form.corrective_action) || null,
+        note: upperText(form.note) || null,
+        status: "OPEN",
+        created_by: session.user.id,
+      })
+      .select()
+      .single();
+    if (error) return alert(errorText(error));
+    setForm((previous) => ({
+      ...previous,
+      production_id: "",
+      product: "",
+      inspected_quantity: "",
+      good_quantity: "",
+      reject_quantity: "0",
+      rework_quantity: "0",
+      defect_type: "",
+      defect_cause: "",
+      corrective_action: "",
+      note: "",
+    }));
+    setSelected(data);
+    await load();
+  };
+  const updateStatus = async (id: any, status: string) => {
+    const { error } = await supabase
+      .from("production_quality")
+      .update({
+        status,
+        resolved_at: status === "CLOSED" ? new Date().toISOString() : null,
+        resolved_by: status === "CLOSED" ? session.user.id : null,
+      })
+      .eq("id", id);
+    if (error) return alert(errorText(error));
+    await load();
+  };
+  const totals = rows.reduce(
+    (acc, row) => ({
+      inspected: acc.inspected + numberValue(row.inspected_quantity),
+      good: acc.good + numberValue(row.good_quantity),
+      reject: acc.reject + numberValue(row.reject_quantity),
+      rework: acc.rework + numberValue(row.rework_quantity),
+    }),
+    {
+      inspected: 0,
+      good: 0,
+      reject: 0,
+      rework: 0,
+    },
+  );
+  const rate = (value: number) =>
+    totals.inspected ? (value / totals.inspected) * 100 : 0;
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <FullSuiteStat
+          label={bi("Yield Rate", "良率")}
+          value={formatPercent(rate(totals.good), 2)}
+          hint={bi(
+            `${totals.good.toLocaleString(appLocale())} baik`,
+            `${totals.good.toLocaleString(appLocale())} 良品`,
+          )}
+          tone="green"
+        />
+        <FullSuiteStat
+          label={bi("Reject Rate", "不良率")}
+          value={formatPercent(rate(totals.reject), 2)}
+          hint={bi(
+            `${totals.reject.toLocaleString(appLocale())} reject`,
+            `${totals.reject.toLocaleString(appLocale())} 不良品`,
+          )}
+          tone="red"
+        />
+        <FullSuiteStat
+          label={bi("Rework Rate", "返工率")}
+          value={formatPercent(rate(totals.rework), 2)}
+          hint={bi(
+            `${totals.rework.toLocaleString(appLocale())} rework`,
+            `${totals.rework.toLocaleString(appLocale())} 返工品`,
+          )}
+          tone="amber"
+        />
+        <FullSuiteStat
+          label={bi("Inspected", "已检验")}
+          value={totals.inspected.toLocaleString(appLocale())}
+          hint={bi(`${rows.length} pemeriksaan`, `${rows.length} 次检验`)}
+          tone="blue"
+        />
+      </div>
+      {canWrite && (
+        <Card className="p-5 md:p-7">
+          <FullSuiteSectionTitle
+            title={bi("Input Quality Control", "质量检验录入")}
+            subtitle={bi(
+              "Jumlah good, reject, dan rework harus menutup seluruh quantity yang diperiksa.",
+              "良品、不良品和返工品数量之和必须覆盖全部检验数量。",
+            )}
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+            <FullSuiteInput label={bi("Tanggal", "日期")}>
+              <input
+                type="date"
+                value={form.inspection_date}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    inspection_date: e.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              />
+            </FullSuiteInput>
+            <FullSuiteInput label={bi("Shift", "班次")}>
+              <select
+                value={form.shift}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    shift: e.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              >
+                <option value="Siang">{bi("Siang", "白班")}</option>
+                <option value="Malam">{bi("Malam", "夜班")}</option>
+              </select>
+            </FullSuiteInput>
+            <FullSuiteInput label={bi("Produk", "产品")}>
+              <input
+                value={form.product}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    product: e.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              />
+            </FullSuiteInput>
+            <FullSuiteInput
+              label={bi("ID Produksi (opsional)", "生产 ID（可选）")}
+            >
+              <input
+                type="number"
+                value={form.production_id}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    production_id: e.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              />
+            </FullSuiteInput>
+            <FullSuiteInput label={bi("Inspected", "已检验")}>
+              <input
+                type="number"
+                min="1"
+                value={form.inspected_quantity}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    inspected_quantity: e.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              />
+            </FullSuiteInput>
+            <FullSuiteInput label={bi("Good", "良品")}>
+              <input
+                type="number"
+                min="0"
+                value={form.good_quantity}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    good_quantity: e.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              />
+            </FullSuiteInput>
+            <FullSuiteInput label={bi("Reject", "不良品")}>
+              <input
+                type="number"
+                min="0"
+                value={form.reject_quantity}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    reject_quantity: e.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              />
+            </FullSuiteInput>
+            <FullSuiteInput label={bi("Rework", "返工")}>
+              <input
+                type="number"
+                min="0"
+                value={form.rework_quantity}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    rework_quantity: e.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              />
+            </FullSuiteInput>
+            <FullSuiteInput label={bi("Jenis Cacat", "缺陷类型")}>
+              <input
+                list="defect-types"
+                value={form.defect_type}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    defect_type: e.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              />
+              <datalist id="defect-types">
+                {defects.map((item) => (
+                  <option key={item.id} value={item.name} />
+                ))}
+              </datalist>
+            </FullSuiteInput>
+            <FullSuiteInput label={bi("Penyebab", "原因")}>
+              <input
+                value={form.defect_cause}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    defect_cause: e.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              />
+            </FullSuiteInput>
+            <FullSuiteInput
+              label={bi("Tindakan Perbaikan", "纠正措施")}
+              className="sm:col-span-2"
+            >
+              <input
+                value={form.corrective_action}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    corrective_action: e.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              />
+            </FullSuiteInput>
+            <FullSuiteInput
+              label={bi("Catatan", "备注")}
+              className="sm:col-span-2"
+            >
+              <input
+                value={form.note}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    note: e.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              />
+            </FullSuiteInput>
+            <div className="flex items-end">
+              <button
+                onClick={save}
+                className="w-full px-4 py-3 rounded-xl bg-emerald-600 text-white text-xs font-black"
+              >
+                {bi("Simpan QC ", "保存质检 ")}
+              </button>
+            </div>
+          </div>
+        </Card>
+      )}
+      <Card className="p-5 md:p-7">
+        <FullSuiteSectionTitle
+          title={bi("Riwayat Kualitas", "质量记录")}
+          subtitle={bi(
+            "Klik lampiran untuk menyimpan foto reject atau bukti pemeriksaan.",
+            "通过附件保存不良品照片或检验凭证。",
+          )}
+          action={
+            <button onClick={load} className={SMALL_BUTTON}>
+              {bi("Muat Ulang ", "刷新 ")}
+            </button>
+          }
+        />
+        <div className="space-y-3">
+          {rows.map((row) => (
+            <div
+              key={row.id}
+              className="rounded-2xl border border-slate-200 p-4"
+            >
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <p className="font-black text-slate-900">{row.product}</p>
+                    <FullSuiteBadge
+                      tone={row.status === "CLOSED" ? "green" : "amber"}
+                    >
+                      {statusLabel(row.status)}
+                    </FullSuiteBadge>
+                    <FullSuiteBadge
+                      tone={
+                        numberValue(row.reject_quantity) > 0 ? "red" : "green"
+                      }
+                    >
+                      {bi("Reject ", "不良 ")}
+                      {row.reject_quantity}
+                    </FullSuiteBadge>
+                  </div>
+                  <p className="mt-1 text-[10px] font-bold text-slate-400">
+                    {row.inspection_date} • {shiftLabel(row.shift)}
+                    {bi(" • Diperiksa", " • 已检验")} {row.inspected_quantity}
+                    {bi(" • Baik ", " • 良品 ")}
+                    {row.good_quantity}
+                    {bi(" • Rework", " • 返工")} {row.rework_quantity}
+                  </p>
+                  <p className="mt-2 text-xs font-bold text-slate-600">
+                    {row.defect_type || bi("Tanpa defect", "无缺陷")} —{" "}
+                    {row.defect_cause || "-"}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {canWrite && row.status !== "CLOSED" && (
+                    <button
+                      onClick={() => updateStatus(row.id, "CLOSED")}
+                      className={SMALL_BUTTON}
+                    >
+                      {bi("Tutup ", "关闭 ")}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setSelected(row)}
+                    className={SMALL_BUTTON}
+                  >
+                    {bi("Lampiran & Detail ", "附件与详情 ")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {!rows.length && (
+            <p className="py-10 text-center text-xs font-bold text-slate-400">
+              {bi("Belum ada data QC. ", "暂无质检数据。 ")}
+            </p>
+          )}
+        </div>
+      </Card>
+      <FullSuiteModal
+        open={Boolean(selected)}
+        title={bi(
+          `Detail QC ${selected?.product || ""}`,
+          `质量检验详情 ${selected?.product || ""}`,
+        )}
+        onClose={() => setSelected(null)}
+      >
+        {selected && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              {Object.entries(selected)
+                .filter(([key]) => !["metadata"].includes(key))
+                .slice(0, 18)
+                .map(([key, value]) => (
+                  <div key={key} className="rounded-xl bg-slate-50 p-3">
+                    <p className="text-[9px] font-black uppercase text-slate-400">
+                      {fieldLabel(key)}
+                    </p>
+                    <p className="mt-1 text-xs font-bold text-slate-700 break-words">
+                      {dataValueLabel(key, value)}
+                    </p>
+                  </div>
+                ))}
+            </div>
+            <AttachmentManager
+              session={session}
+              profile={profile}
+              entityType="quality"
+              entityId={selected.id}
+            />
+          </div>
+        )}
+      </FullSuiteModal>
+    </div>
+  );
+}
+function WorkOrdersPage({ session, profile }: any) {
+  const [orders, setOrders] = useState<any[]>([]);
+  const [batches, setBatches] = useState<any[]>([]);
+  const [actualByOrder, setActualByOrder] = useState<Record<string, number>>(
+    {},
+  );
+  const [selected, setSelected] = useState<any>(null);
+  const [orderForm, setOrderForm] = useState({
+    code: "",
+    product: "",
+    color: "",
+    target_quantity: "",
+    planned_start: jakartaDateKey(),
+    planned_end: jakartaDateKey(),
+    customer: "",
+    line_code: "",
+    machine_code: "",
+    note: "",
+  });
+  const [batchForm, setBatchForm] = useState({
+    work_order_id: "",
+    batch_code: "",
+    product: "",
+    color: "",
+    planned_quantity: "",
+    note: "",
+  });
+  const manager = isManagerRole(profile?.role);
+  const load = async () => {
+    const [orderResult, batchResult, productionResult] = await Promise.all([
+      supabase
+        .from("work_orders")
+        .select("*")
+        .order("created_at", {
+          ascending: false,
+        })
+        .limit(500),
+      supabase
+        .from("production_batches")
+        .select("*,work_orders(code)")
+        .order("created_at", {
+          ascending: false,
+        })
+        .limit(500),
+      supabase
+        .from("production_data")
+        .select("work_order_id,quantity")
+        .not("work_order_id", "is", null)
+        .is("deleted_at", null)
+        .limit(10000),
+    ]);
+    if (orderResult.error) alert(errorText(orderResult.error));
+    setOrders(orderResult.data || []);
+    setBatches(batchResult.data || []);
+    const grouped: Record<string, number> = {};
+    (productionResult.data || []).forEach((row: any) => {
+      grouped[String(row.work_order_id)] =
+        (grouped[String(row.work_order_id)] || 0) + numberValue(row.quantity);
+    });
+    setActualByOrder(grouped);
+  };
+  useEffect(() => {
+    load();
+  }, []);
+  const saveOrder = async () => {
+    if (!orderForm.code.trim() || !orderForm.product.trim())
+      return alert(bi("Kode dan produk wajib diisi.", "代码和产品为必填项。"));
+    const { error } = await supabase.from("work_orders").insert({
+      ...orderForm,
+      code: upperText(orderForm.code),
+      product: upperText(orderForm.product),
+      color: upperText(orderForm.color) || null,
+      target_quantity: Math.floor(numberValue(orderForm.target_quantity)),
+      customer: upperText(orderForm.customer) || null,
+      line_code: upperText(orderForm.line_code) || null,
+      machine_code: upperText(orderForm.machine_code) || null,
+      note: upperText(orderForm.note) || null,
+      status: "PLANNED",
+      created_by: session.user.id,
+    });
+    if (error) return alert(errorText(error));
+    setOrderForm((previous) => ({
+      ...previous,
+      code: "",
+      product: "",
+      color: "",
+      target_quantity: "",
+      customer: "",
+      note: "",
+    }));
+    await load();
+  };
+  const saveBatch = async () => {
+    if (!batchForm.batch_code.trim() || !batchForm.product.trim())
+      return alert(
+        bi("Kode batch dan produk wajib diisi.", "批次代码和产品为必填项。"),
+      );
+    const { error } = await supabase.from("production_batches").insert({
+      ...batchForm,
+      batch_code: upperText(batchForm.batch_code),
+      product: upperText(batchForm.product),
+      color: upperText(batchForm.color) || null,
+      planned_quantity: Math.floor(numberValue(batchForm.planned_quantity)),
+      work_order_id: batchForm.work_order_id || null,
+      note: upperText(batchForm.note) || null,
+      status: "OPEN",
+      created_by: session.user.id,
+    });
+    if (error) return alert(errorText(error));
+    setBatchForm({
+      work_order_id: "",
+      batch_code: "",
+      product: "",
+      color: "",
+      planned_quantity: "",
+      note: "",
+    });
+    await load();
+  };
+  const updateOrderStatus = async (id: string, status: string) => {
+    const { error } = await supabase
+      .from("work_orders")
+      .update({
+        status,
+        completed_at: status === "COMPLETED" ? new Date().toISOString() : null,
+      })
+      .eq("id", id);
+    if (error) return alert(errorText(error));
+    await load();
+  };
+  return (
+    <div className="space-y-6">
+      {manager && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+          <Card className="p-5 md:p-7">
+            <FullSuiteSectionTitle
+              title={bi("Buat Work Order", "创建工单")}
+              subtitle={bi(
+                "Menjadi referensi target, batch, barcode, dan traceability produksi.",
+                "作为目标、批次、条码和生产追溯的参考。",
+              )}
+            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FullSuiteInput label={bi("Kode", "代码")}>
+                <input
+                  value={orderForm.code}
+                  onChange={(e) =>
+                    setOrderForm({
+                      ...orderForm,
+                      code: e.target.value,
+                    })
+                  }
+                  className={INPUT_CLASS}
+                />
+              </FullSuiteInput>
+              <FullSuiteInput label={bi("Produk", "产品")}>
+                <input
+                  value={orderForm.product}
+                  onChange={(e) =>
+                    setOrderForm({
+                      ...orderForm,
+                      product: e.target.value,
+                    })
+                  }
+                  className={INPUT_CLASS}
+                />
+              </FullSuiteInput>
+              <FullSuiteInput label={bi("Warna", "颜色")}>
+                <input
+                  value={orderForm.color}
+                  onChange={(e) =>
+                    setOrderForm({
+                      ...orderForm,
+                      color: e.target.value,
+                    })
+                  }
+                  className={INPUT_CLASS}
+                />
+              </FullSuiteInput>
+              <FullSuiteInput label={bi("Target", "目标")}>
+                <input
+                  type="number"
+                  value={orderForm.target_quantity}
+                  onChange={(e) =>
+                    setOrderForm({
+                      ...orderForm,
+                      target_quantity: e.target.value,
+                    })
+                  }
+                  className={INPUT_CLASS}
+                />
+              </FullSuiteInput>
+              <FullSuiteInput label={bi("Mulai", "开始")}>
+                <input
+                  type="date"
+                  value={orderForm.planned_start}
+                  onChange={(e) =>
+                    setOrderForm({
+                      ...orderForm,
+                      planned_start: e.target.value,
+                    })
+                  }
+                  className={INPUT_CLASS}
+                />
+              </FullSuiteInput>
+              <FullSuiteInput label={bi("Selesai", "完成")}>
+                <input
+                  type="date"
+                  value={orderForm.planned_end}
+                  onChange={(e) =>
+                    setOrderForm({
+                      ...orderForm,
+                      planned_end: e.target.value,
+                    })
+                  }
+                  className={INPUT_CLASS}
+                />
+              </FullSuiteInput>
+              <FullSuiteInput label={bi("Customer", "客户")}>
+                <input
+                  value={orderForm.customer}
+                  onChange={(e) =>
+                    setOrderForm({
+                      ...orderForm,
+                      customer: e.target.value,
+                    })
+                  }
+                  className={INPUT_CLASS}
+                />
+              </FullSuiteInput>
+              <FullSuiteInput label={bi("Line / Mesin", "产线 / 机器")}>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    placeholder={bi("Line", "产线")}
+                    value={orderForm.line_code}
+                    onChange={(e) =>
+                      setOrderForm({
+                        ...orderForm,
+                        line_code: e.target.value,
+                      })
+                    }
+                    className={INPUT_CLASS}
+                  />
+                  <input
+                    placeholder={bi("Mesin", "机器")}
+                    value={orderForm.machine_code}
+                    onChange={(e) =>
+                      setOrderForm({
+                        ...orderForm,
+                        machine_code: e.target.value,
+                      })
+                    }
+                    className={INPUT_CLASS}
+                  />
+                </div>
+              </FullSuiteInput>
+              <button
+                onClick={saveOrder}
+                className="sm:col-span-2 px-4 py-3 rounded-xl bg-blue-600 text-white text-xs font-black"
+              >
+                {bi("Simpan Work Order ", "保存工单 ")}
+              </button>
+            </div>
+          </Card>
+          <Card className="p-5 md:p-7">
+            <FullSuiteSectionTitle
+              title={bi("Buat Batch", "创建批次")}
+              subtitle={bi(
+                "Batch dapat dipindai dan otomatis mengisi produk, warna, serta work order.",
+                "扫描批次后可自动填写产品、颜色和工单。",
+              )}
+            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FullSuiteInput label={bi("Work Order", "工单")}>
+                <select
+                  value={batchForm.work_order_id}
+                  onChange={(e) => {
+                    const order = orders.find(
+                      (item) => item.id === e.target.value,
+                    );
+                    setBatchForm({
+                      ...batchForm,
+                      work_order_id: e.target.value,
+                      product: order?.product || batchForm.product,
+                      color: order?.color || batchForm.color,
+                    });
+                  }}
+                  className={INPUT_CLASS}
+                >
+                  <option value="">{bi("Tanpa WO", "无工单")}</option>
+                  {orders.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.code}
+                    </option>
+                  ))}
+                </select>
+              </FullSuiteInput>
+              <FullSuiteInput label={bi("Kode Batch", "批次代码")}>
+                <input
+                  value={batchForm.batch_code}
+                  onChange={(e) =>
+                    setBatchForm({
+                      ...batchForm,
+                      batch_code: e.target.value,
+                    })
+                  }
+                  className={INPUT_CLASS}
+                />
+              </FullSuiteInput>
+              <FullSuiteInput label={bi("Produk", "产品")}>
+                <input
+                  value={batchForm.product}
+                  onChange={(e) =>
+                    setBatchForm({
+                      ...batchForm,
+                      product: e.target.value,
+                    })
+                  }
+                  className={INPUT_CLASS}
+                />
+              </FullSuiteInput>
+              <FullSuiteInput label={bi("Warna", "颜色")}>
+                <input
+                  value={batchForm.color}
+                  onChange={(e) =>
+                    setBatchForm({
+                      ...batchForm,
+                      color: e.target.value,
+                    })
+                  }
+                  className={INPUT_CLASS}
+                />
+              </FullSuiteInput>
+              <FullSuiteInput label={bi("Planned Qty", "计划数量")}>
+                <input
+                  type="number"
+                  value={batchForm.planned_quantity}
+                  onChange={(e) =>
+                    setBatchForm({
+                      ...batchForm,
+                      planned_quantity: e.target.value,
+                    })
+                  }
+                  className={INPUT_CLASS}
+                />
+              </FullSuiteInput>
+              <FullSuiteInput label={bi("Catatan", "备注")}>
+                <input
+                  value={batchForm.note}
+                  onChange={(e) =>
+                    setBatchForm({
+                      ...batchForm,
+                      note: e.target.value,
+                    })
+                  }
+                  className={INPUT_CLASS}
+                />
+              </FullSuiteInput>
+              <button
+                onClick={saveBatch}
+                className="sm:col-span-2 px-4 py-3 rounded-xl bg-indigo-600 text-white text-xs font-black"
+              >
+                {bi("Simpan Batch ", "保存批次 ")}
+              </button>
+            </div>
+          </Card>
+        </div>
+      )}
+      <Card className="p-5 md:p-7">
+        <FullSuiteSectionTitle
+          title={bi("Work Order", "工单")}
+          subtitle={bi(
+            "Progres aktual diakumulasi dari production_data yang merujuk work order.",
+            "实际进度根据关联该工单的 production_data 汇总。",
+          )}
+          action={
+            <button onClick={load} className={SMALL_BUTTON}>
+              {bi("Muat Ulang ", "刷新 ")}
+            </button>
+          }
+        />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {orders.map((order) => {
+            const actual = actualByOrder[String(order.id)] || 0;
+            const target = numberValue(order.target_quantity);
+            const percent = target ? Math.min((actual / target) * 100, 100) : 0;
+            return (
+              <div
+                key={order.id}
+                className="rounded-2xl border border-slate-200 p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <p className="font-black text-slate-900">{order.code}</p>
+                      <FullSuiteBadge
+                        tone={
+                          order.status === "COMPLETED"
+                            ? "green"
+                            : order.status === "PAUSED"
+                              ? "amber"
+                              : "blue"
+                        }
+                      >
+                        {statusLabel(order.status)}
+                      </FullSuiteBadge>
+                    </div>
+                    <p className="mt-1 text-xs font-bold text-slate-500">
+                      {order.product} • {order.color || "-"} •{" "}
+                      {order.customer || "-"}
+                    </p>
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() =>
+                        printBarcodeLabel(
+                          `WO:${order.code}`,
+                          `WORK ORDER ${order.code}`,
+                          `${order.product} • ${order.color || "-"}`,
+                        )
+                      }
+                      className={SMALL_BUTTON}
+                    >
+                      {bi("Barcode ", "条码 ")}
+                    </button>
+                    <button
+                      onClick={() =>
+                        setSelected({
+                          type: "work_order",
+                          data: order,
+                        })
+                      }
+                      className={SMALL_BUTTON}
+                    >
+                      {bi("Detail ", "详情 ")}
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <div className="flex justify-between text-[10px] font-black text-slate-500">
+                    <span>
+                      {actual.toLocaleString(appLocale())} /{" "}
+                      {target.toLocaleString(appLocale())}
+                    </span>
+                    <span>{percent.toFixed(1)}%</span>
+                  </div>
+                  <div className="mt-2 h-2 rounded-full bg-slate-100 overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 rounded-full"
+                      style={{
+                        width: `${percent}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+                {manager && (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {[
+                      "PLANNED",
+                      "IN_PROGRESS",
+                      "PAUSED",
+                      "COMPLETED",
+                      "CANCELLED",
+                    ].map((status) => (
+                      <button
+                        key={status}
+                        disabled={order.status === status}
+                        onClick={() => updateOrderStatus(order.id, status)}
+                        className={SMALL_BUTTON}
+                      >
+                        {statusLabel(status)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {!orders.length && (
+            <p className="col-span-full py-10 text-center text-xs font-bold text-slate-400">
+              {bi("Belum ada work order. ", "暂无工单。 ")}
+            </p>
+          )}
+        </div>
+      </Card>
+      <Card className="p-5 md:p-7">
+        <FullSuiteSectionTitle
+          title={bi("Batch Produksi", "生产批次")}
+          subtitle={bi(
+            "Cetak barcode batch untuk pemindaian cepat pada form produksi.",
+            "打印批次条码，以便在生产表单中快速扫描。",
+          )}
+        />
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[800px] text-xs">
+            <thead>
+              <tr className="border-b text-left text-slate-500">
+                <th className="p-3">{bi("Batch", "批次")}</th>
+                <th className="p-3">{bi("Work Order", "工单")}</th>
+                <th className="p-3">{bi("Produk", "产品")}</th>
+                <th className="p-3">{bi("Warna", "颜色")}</th>
+                <th className="p-3 text-right">{bi("Rencana", "计划数量")}</th>
+                <th className="p-3">{bi("Status", "状态")}</th>
+                <th className="p-3"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {batches.map((batch) => (
+                <tr key={batch.id}>
+                  <td className="p-3 font-black">{batch.batch_code}</td>
+                  <td className="p-3">{batch.work_orders?.code || "-"}</td>
+                  <td className="p-3">{batch.product}</td>
+                  <td className="p-3">{batch.color || "-"}</td>
+                  <td className="p-3 text-right font-black">
+                    {numberValue(batch.planned_quantity).toLocaleString(
+                      appLocale(),
+                    )}
+                  </td>
+                  <td className="p-3">
+                    <FullSuiteBadge>{statusLabel(batch.status)}</FullSuiteBadge>
+                  </td>
+                  <td className="p-3 text-right">
+                    <button
+                      onClick={() =>
+                        printBarcodeLabel(
+                          `BATCH:${batch.batch_code}`,
+                          `BATCH ${batch.batch_code}`,
+                          `${batch.product} • ${batch.color || "-"}`,
+                        )
+                      }
+                      className={SMALL_BUTTON}
+                    >
+                      {bi("Barcode ", "条码 ")}
+                    </button>
+                    <button
+                      onClick={() =>
+                        setSelected({
+                          type: "batch",
+                          data: batch,
+                        })
+                      }
+                      className={`${SMALL_BUTTON} ml-2`}
+                    >
+                      {bi("Detail ", "详情 ")}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      <FullSuiteModal
+        open={Boolean(selected)}
+        title={
+          selected?.type === "batch"
+            ? `Batch ${selected?.data?.batch_code}`
+            : `Work Order ${selected?.data?.code}`
+        }
+        onClose={() => setSelected(null)}
+      >
+        {selected && (
+          <div className="space-y-4">
+            <BilingualDataGrid
+              data={selected.data}
+              omit={["metadata", "work_orders"]}
+            />
+            <Code128Barcode
+              value={
+                selected.type === "batch"
+                  ? `BATCH:${selected.data.batch_code}`
+                  : `WO:${selected.data.code}`
+              }
+              title={
+                selected.type === "batch"
+                  ? bi("Barcode Batch", "批次条码")
+                  : bi("Barcode Work Order", "工单条码")
+              }
+            />
+            <AttachmentManager
+              session={session}
+              profile={profile}
+              entityType={selected.type}
+              entityId={selected.data.id}
+            />
+          </div>
+        )}
+      </FullSuiteModal>
+    </div>
+  );
+}
+function ShiftClosingPage({ session, profile }: any) {
+  const [date, setDate] = useState(jakartaDateKey());
+  const [shift, setShift] = useState("Siang");
+  const [summary, setSummary] = useState({
+    actual: 0,
+    target: 0,
+    reject: 0,
+    rework: 0,
+    records: 0,
+  });
+  const [rows, setRows] = useState<any[]>([]);
+  const [form, setForm] = useState({
+    issues: "",
+    handover_note: "",
+    supervisor_note: "",
+  });
+  const [loading, setLoading] = useState(false);
+  const manager = isManagerRole(profile?.role);
+  const canSubmit = ["admin", "supervisor", "operator", "qc"].includes(
+    profile?.role,
+  );
+  const load = async () => {
+    setLoading(true);
+    const [productionResult, targetResult, qualityResult, closureResult] =
+      await Promise.all([
+        supabase
+          .from("production_data")
+          .select("quantity")
+          .eq("date", date)
+          .eq("shift", shift)
+          .is("deleted_at", null),
+        supabase
+          .from("production_targets")
+          .select("target_quantity")
+          .eq("target_date", date)
+          .eq("shift", shift),
+        supabase
+          .from("production_quality")
+          .select("reject_quantity,rework_quantity")
+          .eq("inspection_date", date)
+          .eq("shift", shift),
+        supabase
+          .from("shift_closures")
+          .select("*")
+          .order("shift_date", {
+            ascending: false,
+          })
+          .order("created_at", {
+            ascending: false,
+          })
+          .limit(250),
+      ]);
+    if (productionResult.error) alert(errorText(productionResult.error));
+    setSummary({
+      actual: (productionResult.data || []).reduce(
+        (sum, row) => sum + numberValue(row.quantity),
+        0,
+      ),
+      target: (targetResult.data || []).reduce(
+        (sum, row) => sum + numberValue(row.target_quantity),
+        0,
+      ),
+      reject: (qualityResult.data || []).reduce(
+        (sum, row) => sum + numberValue(row.reject_quantity),
+        0,
+      ),
+      rework: (qualityResult.data || []).reduce(
+        (sum, row) => sum + numberValue(row.rework_quantity),
+        0,
+      ),
+      records: (productionResult.data || []).length,
+    });
+    setRows(closureResult.data || []);
+    setLoading(false);
+  };
+  useEffect(() => {
+    load();
+  }, [date, shift]);
+  const submit = async () => {
+    const { error } = await supabase.rpc("submit_shift_closure", {
+      p_shift_date: date,
+      p_shift: shift,
+      p_total_quantity: summary.actual,
+      p_target_quantity: summary.target,
+      p_reject_quantity: summary.reject,
+      p_rework_quantity: summary.rework,
+      p_issues: upperText(form.issues) || null,
+      p_handover_note: upperText(form.handover_note) || null,
+      p_supervisor_note: upperText(form.supervisor_note) || null,
+    });
+    if (error) return alert(errorText(error));
+    setForm({
+      issues: "",
+      handover_note: "",
+      supervisor_note: "",
+    });
+    await load();
+  };
+  const setStatus = async (id: string, status: string) => {
+    const note =
+      window.prompt(
+        bi(
+          `Catatan untuk status ${statusLabel(status, "id")}:`,
+          `${statusLabel(status, "cn")}状态备注：`,
+        ),
+        "",
+      ) || "";
+    const { error } = await supabase.rpc("set_shift_closure_status", {
+      p_closure_id: id,
+      p_status: status,
+      p_note: note,
+    });
+    if (error) return alert(errorText(error));
+    await load();
+  };
+  const achievement = summary.target
+    ? (summary.actual / summary.target) * 100
+    : 0;
+  return (
+    <div className="space-y-6">
+      <Card className="p-5 md:p-7">
+        <FullSuiteSectionTitle
+          title={bi("Shift Closing & Serah Terima", "班次结算与交接")}
+          subtitle={bi(
+            "Ringkasan resmi per shift dengan alur OPEN → SUBMITTED → REVIEWED → CLOSED.",
+            "每个班次的正式汇总，流程为 OPEN → SUBMITTED → REVIEWED → CLOSED。",
+          )}
+          action={
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className={INPUT_CLASS}
+              />
+              <select
+                value={shift}
+                onChange={(e) => setShift(e.target.value)}
+                className={INPUT_CLASS}
+              >
+                <option value="Siang">{bi("Siang", "白班")}</option>
+                <option value="Malam">{bi("Malam", "夜班")}</option>
+              </select>
+            </div>
+          }
+        />
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+          <FullSuiteStat
+            label={bi("Aktual", "实际")}
+            value={summary.actual.toLocaleString(appLocale())}
+            tone="blue"
+          />
+          <FullSuiteStat
+            label={bi("Target", "目标")}
+            value={summary.target.toLocaleString(appLocale())}
+            tone="violet"
+          />
+          <FullSuiteStat
+            label={bi("Pencapaian", "达成率")}
+            value={formatPercent(achievement, 1)}
+            tone={achievement >= 100 ? "green" : "amber"}
+          />
+          <FullSuiteStat
+            label={bi("Reject", "不良品")}
+            value={summary.reject.toLocaleString(appLocale())}
+            tone="red"
+          />
+          <FullSuiteStat
+            label={bi("Record", "记录")}
+            value={summary.records.toLocaleString(appLocale())}
+            tone="slate"
+          />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <FullSuiteInput label={bi("Kendala", "问题")}>
+            <textarea
+              disabled={!canSubmit}
+              value={form.issues}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  issues: e.target.value,
+                })
+              }
+              className={`${INPUT_CLASS} min-h-28`}
+            />
+          </FullSuiteInput>
+          <FullSuiteInput label={bi("Catatan Serah Terima", "交接备注")}>
+            <textarea
+              disabled={!canSubmit}
+              value={form.handover_note}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  handover_note: e.target.value,
+                })
+              }
+              className={`${INPUT_CLASS} min-h-28`}
+            />
+          </FullSuiteInput>
+          <FullSuiteInput label={bi("Catatan Supervisor", "主管备注")}>
+            <textarea
+              disabled={!manager}
+              value={form.supervisor_note}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  supervisor_note: e.target.value,
+                })
+              }
+              className={`${INPUT_CLASS} min-h-28`}
+            />
+          </FullSuiteInput>
+        </div>
+        <button
+          disabled={loading || !canSubmit}
+          onClick={submit}
+          className="mt-4 px-5 py-3 rounded-xl bg-indigo-600 text-white text-xs font-black"
+        >
+          {bi("Kirim Ringkasan Shift ", "提交班次汇总 ")}
+        </button>
+      </Card>
+      <Card className="p-5 md:p-7">
+        <FullSuiteSectionTitle
+          title={bi("Riwayat Shift", "班次历史")}
+          subtitle={bi(
+            "Supervisor dapat review, menutup, atau membuka kembali shift.",
+            "主管可以审核、关闭或重新开启班次。",
+          )}
+          action={
+            <button onClick={load} className={SMALL_BUTTON}>
+              {bi("Muat Ulang ", "刷新 ")}
+            </button>
+          }
+        />
+        <div className="space-y-3">
+          {rows.map((row) => (
+            <div
+              key={row.id}
+              className="rounded-2xl border border-slate-200 p-4"
+            >
+              <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+                <div>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <p className="font-black text-slate-900">
+                      {row.shift_date} • {shiftLabel(row.shift)}
+                    </p>
+                    <FullSuiteBadge
+                      tone={
+                        row.status === "CLOSED"
+                          ? "green"
+                          : row.status === "REOPENED"
+                            ? "red"
+                            : row.status === "REVIEWED"
+                              ? "blue"
+                              : "amber"
+                      }
+                    >
+                      {statusLabel(row.status)}
+                    </FullSuiteBadge>
+                  </div>
+                  <p className="mt-2 text-xs font-bold text-slate-500">
+                    {bi("Aktual", "实际")}{" "}
+                    {numberValue(row.total_quantity).toLocaleString(
+                      appLocale(),
+                    )}{" "}
+                    {bi("• Target", "• 目标")}{" "}
+                    {numberValue(row.target_quantity).toLocaleString(
+                      appLocale(),
+                    )}{" "}
+                    {bi("• Reject", "• 不良")}{" "}
+                    {numberValue(row.reject_quantity).toLocaleString(
+                      appLocale(),
+                    )}{" "}
+                    {bi("• Rework", "• 返工")}{" "}
+                    {numberValue(row.rework_quantity).toLocaleString(
+                      appLocale(),
+                    )}
+                  </p>
+                  <p className="mt-2 text-[11px] font-bold text-slate-600">
+                    {bi("Kendala: ", "问题： ")}
+                    {row.issues || "-"}
+                  </p>
+                  <p className="mt-1 text-[11px] font-bold text-slate-600">
+                    {bi("Serah terima: ", "交接： ")}
+                    {row.handover_note || "-"}
+                  </p>
+                </div>
+                {manager && (
+                  <div className="flex flex-wrap gap-2">
+                    {["REVIEWED", "CLOSED", "REOPENED"].map((status) => (
+                      <button
+                        key={status}
+                        disabled={row.status === status}
+                        onClick={() => setStatus(row.id, status)}
+                        className={SMALL_BUTTON}
+                      >
+                        {statusLabel(status)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="mt-4">
+                <AttachmentManager
+                  compact
+                  session={session}
+                  profile={profile}
+                  entityType="shift_closure"
+                  entityId={row.id}
+                />
+              </div>
+            </div>
+          ))}
+          {!rows.length && (
+            <p className="py-10 text-center text-xs font-bold text-slate-400">
+              {bi("Belum ada penutupan shift. ", "暂无班次结算。 ")}
+            </p>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+function ApprovalsAndTrashPage({ profile }: any) {
+  const [requests, setRequests] = useState<any[]>([]);
+  const [trash, setTrash] = useState<any[]>([]);
+  const [mode, setMode] = useState<"approval" | "trash">("approval");
+  const [loading, setLoading] = useState(false);
+  const manager = isManagerRole(profile?.role);
+  const load = async () => {
+    setLoading(true);
+    const [requestResult, trashResult] = await Promise.all([
+      supabase
+        .from("change_requests")
+        .select("*")
+        .order("created_at", {
+          ascending: false,
+        })
+        .limit(500),
+      supabase
+        .from("production_data")
+        .select("*")
+        .not("deleted_at", "is", null)
+        .order("deleted_at", {
+          ascending: false,
+        })
+        .limit(500),
+    ]);
+    if (requestResult.error) alert(errorText(requestResult.error));
+    setRequests(requestResult.data || []);
+    setTrash(trashResult.data || []);
+    setLoading(false);
+  };
+  useEffect(() => {
+    load();
+  }, []);
+  const review = async (id: string, decision: "APPROVED" | "REJECTED") => {
+    if (!manager) return;
+    const note =
+      window.prompt(
+        bi(
+          `Catatan keputusan ${statusLabel(decision, "id")}:`,
+          `${statusLabel(decision, "cn")}决定备注：`,
+        ),
+        "",
+      ) || "";
+    const { error } = await supabase.rpc("review_change_request", {
+      p_request_id: id,
+      p_decision: decision,
+      p_review_note: note,
+    });
+    if (error) return alert(errorText(error));
+    await load();
+  };
+  const restore = async (id: any) => {
+    if (
+      !manager ||
+      !window.confirm(bi("Pulihkan record ini?", "恢复此记录吗？"))
+    )
+      return;
+    const { error } = await supabase.rpc("restore_production_record", {
+      p_production_id: Number(id),
+    });
+    if (error) return alert(errorText(error));
+    await load();
+  };
+  const purge = async (id: any) => {
+    if (profile?.role !== "admin") return;
+    const confirmation = window.prompt(
+      bi(
+        `Ketik PURGE-${id} untuk menghapus permanen:`,
+        `输入 PURGE-${id} 以永久删除：`,
+      ),
+    );
+    if (confirmation !== `PURGE-${id}`) return;
+    const { error } = await supabase.rpc("purge_production_record", {
+      p_production_id: Number(id),
+    });
+    if (error) return alert(errorText(error));
+    await load();
+  };
+  return (
+    <Card className="p-5 md:p-7">
+      <FullSuiteSectionTitle
+        title={bi("Persetujuan & Trash", "审批与回收站")}
+        subtitle={bi(
+          "Perubahan sensitif diproses melalui permintaan; penghapusan menggunakan soft delete sebelum purge permanen.",
+          "敏感变更通过申请处理；删除先进入软删除回收站，再进行永久清除。",
+        )}
+        action={
+          <div className="flex gap-2">
+            <button
+              onClick={() => setMode("approval")}
+              className={`${SMALL_BUTTON} ${mode === "approval" ? "!bg-indigo-600 !text-white" : ""}`}
+            >
+              {bi("Permintaan ( ", "申请（ ")}
+              {requests.filter((item) => item.status === "PENDING").length})
+            </button>
+            <button
+              onClick={() => setMode("trash")}
+              className={`${SMALL_BUTTON} ${mode === "trash" ? "!bg-red-600 !text-white" : ""}`}
+            >
+              {bi("Trash (", "回收站（")}
+              {trash.length})
+            </button>
+            <button onClick={load} className={SMALL_BUTTON}>
+              {bi("Muat Ulang ", "刷新 ")}
+            </button>
+          </div>
+        }
+      />
+      {loading && (
+        <p className="mb-4 text-[10px] font-black text-indigo-600 animate-pulse">
+          {bi("Memuat data persetujuan...", "正在加载审批数据...")}
+        </p>
+      )}
+      {mode === "approval" ? (
+        <div className="space-y-3">
+          {requests.map((item) => (
+            <div
+              key={item.id}
+              className="rounded-2xl border border-slate-200 p-4"
+            >
+              <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <FullSuiteBadge
+                      tone={item.request_type === "DELETE" ? "red" : "blue"}
+                    >
+                      {activityLabel(item.request_type)}
+                    </FullSuiteBadge>
+                    <FullSuiteBadge
+                      tone={
+                        item.status === "APPROVED"
+                          ? "green"
+                          : item.status === "REJECTED"
+                            ? "red"
+                            : "amber"
+                      }
+                    >
+                      {statusLabel(item.status)}
+                    </FullSuiteBadge>
+                    <span className="text-[10px] font-black text-slate-400">
+                      {bi("Produksi #", "生产 #")}
+                      {item.production_id}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-xs font-bold text-slate-700">
+                    {item.reason || bi("Tanpa alasan", "无原因")}
+                  </p>
+                  <p className="mt-2 text-[10px] font-bold text-slate-400">
+                    {bi("Diajukan ", "提交于 ")}
+                    {formatDateTime(item.created_at)}
+                  </p>
+                  {item.requested_changes && (
+                    <div className="mt-3 max-w-2xl">
+                      <BilingualDataGrid data={item.requested_changes} />
+                    </div>
+                  )}
+                </div>
+                {manager && item.status === "PENDING" && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => review(item.id, "APPROVED")}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-[10px] font-black"
+                    >
+                      {bi("Setujui ", "批准 ")}
+                    </button>
+                    <button
+                      onClick={() => review(item.id, "REJECTED")}
+                      className="px-4 py-2 rounded-xl bg-red-600 text-white text-[10px] font-black"
+                    >
+                      {bi("Tolak ", "拒绝 ")}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+          {!requests.length && (
+            <p className="py-12 text-center text-xs font-bold text-slate-400">
+              {bi("Belum ada permintaan perubahan. ", "暂无变更申请。 ")}
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-xs">
+            <thead>
+              <tr className="border-b text-left text-slate-500">
+                <th className="p-3">{bi("ID", "ID")}</th>
+                <th className="p-3">{bi("Dihapus", "删除时间")}</th>
+                <th className="p-3">{bi("Tanggal", "日期")}</th>
+                <th className="p-3">{bi("Produk", "产品")}</th>
+                <th className="p-3">{bi("Warna", "颜色")}</th>
+                <th className="p-3 text-right">{bi("Qty", "数量")}</th>
+                <th className="p-3">{bi("Operator", "操作员")}</th>
+                <th className="p-3"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {trash.map((row) => (
+                <tr key={row.id}>
+                  <td className="p-3 font-black">#{row.id}</td>
+                  <td className="p-3">{formatDateTime(row.deleted_at)}</td>
+                  <td className="p-3">{row.date}</td>
+                  <td className="p-3 font-black">{row.product}</td>
+                  <td className="p-3">{row.color}</td>
+                  <td className="p-3 text-right font-black">{row.quantity}</td>
+                  <td className="p-3">{row.created_by}</td>
+                  <td className="p-3 text-right">
+                    <button
+                      disabled={!manager}
+                      onClick={() => restore(row.id)}
+                      className={SMALL_BUTTON}
+                    >
+                      {bi("Pulihkan ", "恢复 ")}
+                    </button>
+                    {profile?.role === "admin" && (
+                      <button
+                        onClick={() => purge(row.id)}
+                        className={`${SMALL_BUTTON} ml-2 !text-red-600`}
+                      >
+                        {bi("Hapus Permanen ", "永久删除 ")}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!trash.length && (
+            <p className="py-12 text-center text-xs font-bold text-slate-400">
+              {bi("Trash kosong. ", "回收站为空。 ")}
+            </p>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+const MASTER_CATEGORIES = [
+  "PRODUCT",
+  "COLOR",
+  "SHIFT",
+  "OPERATOR",
+  "MACHINE",
+  "LINE",
+  "DEFECT_TYPE",
+  "CUSTOMER",
+];
+function MasterDataPage({ session, profile }: any) {
+  const [items, setItems] = useState<MasterItem[]>([]);
+  const [settings, setSettings] = useState<any[]>([]);
+  const [category, setCategory] = useState("PRODUCT");
+  const [form, setForm] = useState({
+    code: "",
+    name: "",
+    metadata: "{}",
+  });
+  const manager = isManagerRole(profile?.role);
+  const load = async () => {
+    const [itemResult, settingResult] = await Promise.all([
+      supabase.from("master_items").select("*").order("category").order("name"),
+      supabase.from("app_settings").select("*").order("key"),
+    ]);
+    if (itemResult.error) alert(errorText(itemResult.error));
+    setItems((itemResult.data || []) as MasterItem[]);
+    setSettings(settingResult.data || []);
+  };
+  useEffect(() => {
+    load();
+  }, []);
+  const save = async () => {
+    if (!form.code.trim() || !form.name.trim())
+      return alert(bi("Kode dan nama wajib diisi.", "代码和名称为必填项。"));
+    let metadata: any = {};
+    try {
+      metadata = JSON.parse(form.metadata || "{}");
+    } catch {
+      return alert(
+        bi("Metadata harus berupa JSON valid.", "元数据必须是有效的 JSON。"),
+      );
+    }
+    const { error } = await supabase.from("master_items").insert({
+      category,
+      code: upperText(form.code),
+      name: upperText(form.name),
+      metadata,
+      is_active: true,
+      created_by: session.user.id,
+    });
+    if (error) return alert(errorText(error));
+    setForm({
+      code: "",
+      name: "",
+      metadata: "{}",
+    });
+    await load();
+  };
+  const toggle = async (id: any, value: boolean) => {
+    const { error } = await supabase
+      .from("master_items")
+      .update({
+        is_active: value,
+      })
+      .eq("id", id);
+    if (error) return alert(errorText(error));
+    await load();
+  };
+  const updateSetting = async (key: string, value: any) => {
+    if (!manager) return;
+    const { error } = await supabase
+      .from("app_settings")
+      .update({
+        value,
+        updated_by: session.user.id,
+      })
+      .eq("key", key);
+    if (error) return alert(errorText(error));
+    await load();
+  };
+  const categoryItems = items.filter((item) => item.category === category);
+  return (
+    <div className="space-y-6">
+      <Card className="p-5 md:p-7">
+        <FullSuiteSectionTitle
+          title={bi("Master Data", "主数据")}
+          subtitle={bi(
+            "Standarisasi produk, warna, mesin, line, operator, customer, dan jenis cacat.",
+            "标准化产品、颜色、机器、产线、操作员、客户和缺陷类型。",
+          )}
+          action={
+            <button onClick={load} className={SMALL_BUTTON}>
+              {bi("Muat Ulang ", "刷新 ")}
+            </button>
+          }
+        />
+        <div className="flex gap-2 overflow-x-auto pb-2 mb-5">
+          {MASTER_CATEGORIES.map((item) => (
+            <button
+              key={item}
+              onClick={() => setCategory(item)}
+              className={`${SMALL_BUTTON} shrink-0 ${category === item ? "!bg-slate-900 !text-white" : ""}`}
+            >
+              {categoryLabel(item)}
+            </button>
+          ))}
+        </div>
+        {manager && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 rounded-2xl bg-slate-50 border border-slate-100 p-4 mb-5">
+            <FullSuiteInput label={bi("Kode", "代码")}>
+              <input
+                value={form.code}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    code: e.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              />
+            </FullSuiteInput>
+            <FullSuiteInput label={bi("Nama", "名称")}>
+              <input
+                value={form.name}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    name: e.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              />
+            </FullSuiteInput>
+            <FullSuiteInput label={bi("Metadata JSON", "元数据 JSON")}>
+              <input
+                value={form.metadata}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    metadata: e.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              />
+            </FullSuiteInput>
+            <div className="flex items-end">
+              <button
+                onClick={save}
+                className="w-full px-4 py-3 rounded-xl bg-slate-900 text-white text-xs font-black"
+              >
+                {bi("Tambah ", "添加 ")}
+                {categoryLabel(category)}
+              </button>
+            </div>
+          </div>
+        )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {categoryItems.map((item) => (
+            <div
+              key={item.id}
+              className="rounded-2xl border border-slate-200 p-4 flex items-center justify-between gap-3"
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="font-black text-slate-900 truncate">
+                    {item.name}
+                  </p>
+                  <FullSuiteBadge tone={item.is_active ? "green" : "red"}>
+                    {item.is_active
+                      ? bi("Aktif", "启用")
+                      : bi("Nonaktif", "停用")}
+                  </FullSuiteBadge>
+                </div>
+                <p className="mt-1 text-[10px] font-bold text-slate-400">
+                  {item.code}
+                </p>
+              </div>
+              {manager && (
+                <button
+                  onClick={() => toggle(item.id, !item.is_active)}
+                  className={SMALL_BUTTON}
+                >
+                  {item.is_active
+                    ? bi("Nonaktifkan", "停用")
+                    : bi("Aktifkan", "启用")}
+                </button>
+              )}
+            </div>
+          ))}
+          {!categoryItems.length && (
+            <p className="col-span-full py-10 text-center text-xs font-bold text-slate-400">
+              {bi("Belum ada master ", "暂无主数据 ")}
+              {categoryLabel(category)}.
+            </p>
+          )}
+        </div>
+      </Card>
+      <Card className="p-5 md:p-7">
+        <FullSuiteSectionTitle
+          title={bi("Pengaturan Aplikasi", "应用设置")}
+          subtitle={bi(
+            "Nilai ini dibaca oleh React dan fungsi database. Ubah hanya setelah memahami dampaknya.",
+            "这些值由 React 和数据库函数读取。仅在了解影响后修改。",
+          )}
+        />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          {settings.map((setting) => {
+            const value = safeJson(setting.value, setting.value);
+            const isBoolean = typeof value === "boolean";
+            return (
+              <div
+                key={setting.key}
+                className="rounded-2xl border border-slate-200 p-4"
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-black text-slate-900">
+                      {setting.key}
+                    </p>
+                    <p className="mt-1 text-[10px] font-bold text-slate-400">
+                      {settingDescription(setting.key, setting.description)}
+                    </p>
+                  </div>
+                  {isBoolean ? (
+                    <button
+                      disabled={!manager}
+                      onClick={() => updateSetting(setting.key, !value)}
+                      className={`${SMALL_BUTTON} ${value ? "!bg-emerald-600 !text-white" : ""}`}
+                    >
+                      {value ? "ON" : "OFF"}
+                    </button>
+                  ) : (
+                    <button
+                      disabled={!manager}
+                      onClick={() => {
+                        const next = window.prompt(
+                          bi(
+                            `Nilai JSON untuk ${setting.key}:`,
+                            `${setting.key} 的 JSON 值：`,
+                          ),
+                          JSON.stringify(value),
+                        );
+                        if (next === null) return;
+                        try {
+                          updateSetting(setting.key, JSON.parse(next));
+                        } catch {
+                          alert(bi("JSON tidak valid.", "JSON 无效。"));
+                        }
+                      }}
+                      className={SMALL_BUTTON}
+                    >
+                      {JSON.stringify(value)}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+    </div>
+  );
+}
+function ScheduledReportsPage({ session, profile }: any) {
+  const [schedules, setSchedules] = useState<any[]>([]);
+  const [runs, setRuns] = useState<any[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState({
+    name: bi("Laporan Harian Produksi", "每日生产报告"),
+    frequency: "DAILY",
+    local_time: "17:00",
+    weekday: "1",
+    month_day: "1",
+    channel: "ARCHIVE",
+    recipient: "",
+    webhook_url: "",
+    is_active: true,
+  });
+  const manager = isManagerRole(profile?.role);
+  const load = async () => {
+    const [scheduleResult, runResult] = await Promise.all([
+      supabase.from("report_schedules").select("*").order("created_at", {
+        ascending: false,
+      }),
+      supabase
+        .from("report_runs")
+        .select("*")
+        .order("started_at", {
+          ascending: false,
+        })
+        .limit(100),
+    ]);
+    if (scheduleResult.error) alert(errorText(scheduleResult.error));
+    if (runResult.error) alert(errorText(runResult.error));
+    setSchedules(scheduleResult.data || []);
+    setRuns(runResult.data || []);
+  };
+  useEffect(() => {
+    void load();
+  }, []);
+  const save = async () => {
+    if (!manager || !form.name.trim()) return;
+    if (form.channel !== "ARCHIVE" && !form.webhook_url.trim()) {
+      return alert(
+        bi(
+          "Webhook URL wajib diisi untuk channel eksternal.",
+          "外部渠道必须填写 Webhook 地址。",
+        ),
+      );
+    }
+    const { error } = await supabase.from("report_schedules").insert({
+      name: form.name.trim(),
+      frequency: form.frequency,
+      local_time: form.local_time,
+      weekday: form.frequency === "WEEKLY" ? Number(form.weekday) : null,
+      month_day: form.frequency === "MONTHLY" ? Number(form.month_day) : null,
+      timezone: "Asia/Jakarta",
+      channel: form.channel,
+      recipient: form.recipient || null,
+      webhook_url: form.webhook_url || null,
+      filters: {},
+      is_active: form.is_active,
+      created_by: session.user.id,
+    });
+    if (error) return alert(errorText(error));
+    setForm((previous) => ({
+      ...previous,
+      name: bi("Laporan Harian Produksi", "每日生产报告"),
+      recipient: "",
+      webhook_url: "",
+    }));
+    await load();
+  };
+  const toggle = async (id: string, isActive: boolean) => {
+    const { error } = await supabase
+      .from("report_schedules")
+      .update({
+        is_active: isActive,
+      })
+      .eq("id", id);
+    if (error) return alert(errorText(error));
+    await load();
+  };
+  const remove = async (id: string) => {
+    if (!window.confirm(bi("Hapus jadwal laporan ini?", "删除此报告计划吗？")))
+      return;
+    const { error } = await supabase
+      .from("report_schedules")
+      .delete()
+      .eq("id", id);
+    if (error) return alert(errorText(error));
+    await load();
+  };
+  const runNow = async (scheduleId?: string, force = true) => {
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.rpc("run_report_schedules", {
+        p_schedule_id: scheduleId || null,
+        p_force: force,
+      });
+      if (error) throw error;
+      const result = Array.isArray(data) ? data[0] : data;
+      const processed = Number(result?.processed ?? result?.count ?? 0);
+      alert(
+        bi(
+          `${processed} laporan diproses oleh database.`,
+          `数据库已处理 ${processed} 份报告。`,
+        ),
+      );
+      await load();
+    } catch (error) {
+      alert(errorText(error, bi("Laporan gagal diproses.", "报告处理失败。")));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="space-y-6">
+      <Card className="p-5 md:p-7">
+        <FullSuiteSectionTitle
+          title={bi("Laporan Otomatis", "自动报告")}
+          subtitle={bi(
+            "Laporan dihitung, diarsipkan, dan dijadwalkan langsung di PostgreSQL. Channel eksternal dikirim sebagai payload JSON ke Webhook URL yang disimpan pada jadwal.",
+            "报告由 PostgreSQL 直接计算、归档和调度。外部渠道会以 JSON 载荷发送到计划中保存的 Webhook 地址。",
+          )}
+          action={
+            manager ? (
+              <button
+                disabled={busy}
+                onClick={() => runNow(undefined, false)}
+                className={SMALL_BUTTON}
+              >
+                {bi("Proses Jadwal Jatuh Tempo", "处理到期计划")}
+              </button>
+            ) : (
+              <FullSuiteBadge>{bi("Hanya Baca", "只读")}</FullSuiteBadge>
+            )
+          }
+        />
+        {manager && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 rounded-2xl bg-slate-50 border border-slate-100 p-4">
+            <FullSuiteInput label={bi("Nama", "名称")}>
+              <input
+                value={form.name}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    name: event.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              />
+            </FullSuiteInput>
+            <FullSuiteInput label={bi("Frekuensi", "频率")}>
+              <select
+                value={form.frequency}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    frequency: event.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              >
+                {["DAILY", "WEEKLY", "MONTHLY"].map((value) => (
+                  <option key={value} value={value}>
+                    {frequencyLabel(value)}
+                  </option>
+                ))}
+              </select>
+            </FullSuiteInput>
+            <FullSuiteInput label={bi("Jam Jakarta", "雅加达时间")}>
+              <input
+                type="time"
+                value={form.local_time}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    local_time: event.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              />
+            </FullSuiteInput>
+            <FullSuiteInput label={bi("Channel", "渠道")}>
+              <select
+                value={form.channel}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    channel: event.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              >
+                {["ARCHIVE", "EMAIL", "WEBHOOK", "TELEGRAM", "WHATSAPP"].map(
+                  (value) => (
+                    <option key={value} value={value}>
+                      {channelLabel(value)}
+                    </option>
+                  ),
+                )}
+              </select>
+            </FullSuiteInput>
+            {form.frequency === "WEEKLY" && (
+              <FullSuiteInput
+                label={bi(
+                  "Hari (0 Minggu - 6 Sabtu)",
+                  "星期（0 周日 - 6 周六）",
+                )}
+              >
+                <input
+                  type="number"
+                  min="0"
+                  max="6"
+                  value={form.weekday}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      weekday: event.target.value,
+                    })
+                  }
+                  className={INPUT_CLASS}
+                />
+              </FullSuiteInput>
+            )}
+            {form.frequency === "MONTHLY" && (
+              <FullSuiteInput label={bi("Tanggal Bulanan", "每月日期")}>
+                <input
+                  type="number"
+                  min="1"
+                  max="28"
+                  value={form.month_day}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      month_day: event.target.value,
+                    })
+                  }
+                  className={INPUT_CLASS}
+                />
+              </FullSuiteInput>
+            )}
+            <FullSuiteInput label={bi("Penerima", "接收方")}>
+              <input
+                value={form.recipient}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    recipient: event.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+                placeholder={bi(
+                  "Email / chat ID / tujuan",
+                  "邮箱 / 聊天 ID / 目标",
+                )}
+              />
+            </FullSuiteInput>
+            <FullSuiteInput label="Webhook URL">
+              <input
+                value={form.webhook_url}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    webhook_url: event.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+                placeholder={
+                  form.channel === "ARCHIVE"
+                    ? bi("Tidak diperlukan untuk arsip", "归档无需填写")
+                    : "https://..."
+                }
+              />
+            </FullSuiteInput>
+            <div className="flex items-end">
+              <button
+                onClick={save}
+                className="w-full px-4 py-3 rounded-xl bg-violet-600 text-white text-xs font-black"
+              >
+                {bi("Tambah Jadwal", "添加计划")}
+              </button>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      <Card className="p-5 md:p-7">
+        <FullSuiteSectionTitle
+          title={bi("Jadwal", "计划")}
+          subtitle={bi(
+            "Database mengunci dan memproses setiap jadwal tepat satu kali pada satu siklus, termasuk ketika beberapa proses berjalan bersamaan.",
+            "数据库会锁定并在每个周期中仅处理一次计划，即使多个进程同时运行。",
+          )}
+        />
+        <div className="space-y-3">
+          {schedules.map((item) => (
+            <div
+              key={item.id}
+              className="rounded-2xl border border-slate-200 p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+            >
+              <div>
+                <div className="flex flex-wrap gap-2 items-center">
+                  <p className="font-black text-slate-900">{item.name}</p>
+                  <FullSuiteBadge tone={item.is_active ? "green" : "red"}>
+                    {statusLabel(item.is_active ? "ACTIVE" : "INACTIVE")}
+                  </FullSuiteBadge>
+                  <FullSuiteBadge>{channelLabel(item.channel)}</FullSuiteBadge>
+                </div>
+                <p className="mt-2 text-[10px] font-bold text-slate-400">
+                  {frequencyLabel(item.frequency)} • {item.local_time}
+                  {bi(" WIB •", " 雅加达时间 •")} {bi("Berikutnya", "下次")}:{" "}
+                  {formatDateTime(item.next_run_at)}
+                </p>
+              </div>
+              {manager && (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    disabled={busy}
+                    onClick={() => runNow(item.id, true)}
+                    className={SMALL_BUTTON}
+                  >
+                    {bi("Jalankan", "立即运行")}
+                  </button>
+                  <button
+                    onClick={() => toggle(item.id, !item.is_active)}
+                    className={SMALL_BUTTON}
+                  >
+                    {item.is_active
+                      ? bi("Nonaktifkan", "停用")
+                      : bi("Aktifkan", "启用")}
+                  </button>
+                  <button
+                    onClick={() => remove(item.id)}
+                    className={`${SMALL_BUTTON} !text-red-500`}
+                  >
+                    {bi("Hapus", "删除")}
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+          {!schedules.length && (
+            <p className="py-10 text-center text-xs font-bold text-slate-400">
+              {bi("Belum ada jadwal laporan.", "暂无报告计划。")}
+            </p>
+          )}
+        </div>
+      </Card>
+
+      <Card className="p-5 md:p-7">
+        <FullSuiteSectionTitle
+          title={bi("Riwayat Eksekusi", "执行历史")}
+          subtitle={bi(
+            "Ringkasan selalu disimpan di report_runs. Untuk channel eksternal, request ID pg_net ikut dicatat.",
+            "摘要始终保存在 report_runs 中。外部渠道还会记录 pg_net 请求 ID。",
+          )}
+        />
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[850px] text-xs">
+            <thead>
+              <tr className="border-b text-left text-slate-500">
+                <th className="p-3">{bi("Mulai", "开始时间")}</th>
+                <th className="p-3">{bi("Jadwal", "计划")}</th>
+                <th className="p-3">{bi("Status", "状态")}</th>
+                <th className="p-3">{bi("Channel", "渠道")}</th>
+                <th className="p-3">{bi("Periode", "期间")}</th>
+                <th className="p-3">{bi("Pesan", "消息")}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {runs.map((item) => {
+                const message = reportMessage(item);
+                return (
+                  <tr key={item.id}>
+                    <td className="p-3">{formatDateTime(item.started_at)}</td>
+                    <td className="p-3 font-black">
+                      {item.schedule_name ||
+                        item.schedule_id ||
+                        bi("Manual", "手动")}
+                    </td>
+                    <td className="p-3">
+                      <FullSuiteBadge
+                        tone={
+                          item.status === "SUCCESS"
+                            ? "green"
+                            : item.status === "RUNNING"
+                              ? "blue"
+                              : item.status === "SKIPPED"
+                                ? "amber"
+                                : "red"
+                        }
+                      >
+                        {statusLabel(item.status)}
+                      </FullSuiteBadge>
+                    </td>
+                    <td className="p-3">{channelLabel(item.channel)}</td>
+                    <td className="p-3">
+                      {item.period_start || "-"} — {item.period_end || "-"}
+                    </td>
+                    <td className="p-3 max-w-sm truncate" title={message}>
+                      {message}
+                    </td>
+                  </tr>
+                );
+              })}
+              {!runs.length && (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="p-10 text-center font-bold text-slate-400"
+                  >
+                    {bi("Belum ada riwayat laporan.", "暂无报告执行记录。")}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+function UsersAndSecurityPage({ session, profile }: any) {
+  const [profiles, setProfiles] = useState<AppProfile[]>([]);
+  const [events, setEvents] = useState<any[]>([]);
+  const [invitations, setInvitations] = useState<any[]>([]);
+  const [form, setForm] = useState({
+    email: "",
+    full_name: "",
+    role: "operator" as AppRole,
+  });
+  const [busy, setBusy] = useState(false);
+  const [inviteLink, setInviteLink] = useState("");
+  const admin = profile?.role === "admin";
+  const load = async () => {
+    const requests: PromiseLike<any>[] = [
+      supabase.from("profiles").select("*").order("full_name"),
+      supabase
+        .from("app_login_events")
+        .select("*")
+        .order("created_at", {
+          ascending: false,
+        })
+        .limit(100),
+    ];
+    if (admin) {
+      requests.push(
+        supabase
+          .from("app_invitations")
+          .select("*")
+          .order("created_at", {
+            ascending: false,
+          })
+          .limit(100),
+      );
+    }
+    const results = await Promise.all(requests);
+    const profileResult = results[0];
+    const eventResult = results[1];
+    if (profileResult.error) alert(errorText(profileResult.error));
+    if (eventResult.error) alert(errorText(eventResult.error));
+    setProfiles((profileResult.data || []) as AppProfile[]);
+    setEvents(eventResult.data || []);
+    if (admin) {
+      const invitationResult = results[2];
+      if (invitationResult?.error) alert(errorText(invitationResult.error));
+      setInvitations(invitationResult?.data || []);
+    } else {
+      setInvitations([]);
+    }
+  };
+  useEffect(() => {
+    void load();
+  }, [admin, session?.user?.id]);
+  const updateProfile = async (
+    id: string,
+    nextRole: AppRole,
+    isActive: boolean,
+  ) => {
+    const { error } = await supabase.rpc("admin_update_profile", {
+      p_user_id: id,
+      p_role: nextRole,
+      p_is_active: isActive,
+    });
+    if (error) return alert(errorText(error));
+    await load();
+  };
+  const copyText = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      alert(bi("Tautan berhasil disalin.", "链接已复制。"));
+    } catch {
+      window.prompt(bi("Salin tautan berikut:", "请复制以下链接："), value);
+    }
+  };
+  const createInvitation = async () => {
+    if (!form.email.trim() || !form.full_name.trim())
+      return alert(bi("Email dan nama wajib diisi.", "邮箱和姓名为必填项。"));
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.rpc("create_user_invitation", {
+        p_email: form.email.trim().toLowerCase(),
+        p_full_name: form.full_name.trim(),
+        p_role: form.role,
+        p_expires_hours: 168,
+        p_language: activeLanguage,
+      });
+      if (error) throw error;
+      const result = Array.isArray(data) ? data[0] : data;
+      if (!result?.token) throw new Error("INVITATION_TOKEN_NOT_RETURNED");
+      const url = new URL(window.location.href);
+      url.search = "";
+      url.hash = "";
+      url.searchParams.set("invite", String(result.token));
+      url.searchParams.set("lang", activeLanguage);
+      const link = url.toString();
+      setInviteLink(link);
+      setForm({
+        email: "",
+        full_name: "",
+        role: "operator",
+      });
+      await load();
+      await copyText(link);
+    } catch (error) {
+      alert(errorText(error, bi("Undangan gagal dibuat.", "创建邀请失败。")));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const revokeInvitation = async (id: string) => {
+    if (!window.confirm(bi("Batalkan undangan ini?", "撤销此邀请吗？"))) return;
+    const { error } = await supabase.rpc("revoke_user_invitation", {
+      p_invitation_id: id,
+    });
+    if (error) return alert(errorText(error));
+    if (inviteLink) setInviteLink("");
+    await load();
+  };
+  const sendPasswordReset = async (email: string) => {
+    if (!email) return;
+    if (
+      !window.confirm(
+        bi(
+          `Kirim tautan reset password ke ${email}?`,
+          `向 ${email} 发送密码重置链接吗？`,
+        ),
+      )
+    )
+      return;
+    setBusy(true);
+    try {
+      const redirectUrl = new URL(window.location.href);
+      redirectUrl.search = "";
+      redirectUrl.hash = "";
+      redirectUrl.searchParams.set("recovery", "1");
+      redirectUrl.searchParams.set("lang", activeLanguage);
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: redirectUrl.toString(),
+      });
+      if (error) throw error;
+      alert(
+        bi(
+          "Email reset password telah diminta melalui Supabase Auth.",
+          "已通过 Supabase Auth 请求发送密码重置邮件。",
+        ),
+      );
+    } catch (error) {
+      alert(errorText(error, bi("Reset password gagal.", "密码重置失败。")));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const invitationStatus = (item: any) => {
+    if (item.revoked_at) return statusLabel("CANCELLED");
+    if (item.used_at) return bi("Digunakan", "已使用");
+    if (item.expires_at && new Date(item.expires_at).getTime() <= Date.now())
+      return bi("Kedaluwarsa", "已过期");
+    return bi("Aktif", "有效");
+  };
+  return (
+    <div className="space-y-6">
+      <MfaManagement session={session} />
+
+      {admin && (
+        <Card className="p-5 md:p-7">
+          <FullSuiteSectionTitle
+            title={bi("Undang Pengguna", "邀请用户")}
+            subtitle={bi(
+              "Database membuat tautan undangan sekali pakai. Kirim tautan tersebut kepada pengguna agar ia membuat akun sendiri.",
+              "数据库生成一次性邀请链接。请将链接发送给用户，由用户自行创建账户。",
+            )}
+          />
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <FullSuiteInput label={bi("Email", "邮箱")}>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    email: event.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+                placeholder="name@company.com"
+              />
+            </FullSuiteInput>
+            <FullSuiteInput label={bi("Nama Lengkap", "姓名")}>
+              <input
+                value={form.full_name}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    full_name: event.target.value,
+                  })
+                }
+                className={INPUT_CLASS}
+              />
+            </FullSuiteInput>
+            <FullSuiteInput label={bi("Role", "角色")}>
+              <select
+                value={form.role}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    role: event.target.value as AppRole,
+                  })
+                }
+                className={INPUT_CLASS}
+              >
+                {APP_ROLES.map((key) => (
+                  <option key={key} value={key}>
+                    {roleLabel(key)}
+                  </option>
+                ))}
+              </select>
+            </FullSuiteInput>
+            <div className="flex items-end">
+              <button
+                disabled={busy}
+                onClick={createInvitation}
+                className="w-full px-4 py-3 rounded-xl bg-blue-600 text-white text-xs font-black disabled:opacity-50"
+              >
+                {bi("Buat & Salin Undangan", "创建并复制邀请")}
+              </button>
+            </div>
+          </div>
+          {inviteLink && (
+            <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-wider text-blue-700">
+                {bi("Tautan Undangan Terakhir", "最新邀请链接")}
+              </p>
+              <div className="mt-2 flex flex-col sm:flex-row gap-2">
+                <input readOnly value={inviteLink} className={INPUT_CLASS} />
+                <button
+                  onClick={() => copyText(inviteLink)}
+                  className={SMALL_BUTTON}
+                >
+                  {bi("Salin", "复制")}
+                </button>
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {admin && (
+        <Card className="p-5 md:p-7">
+          <FullSuiteSectionTitle
+            title={bi("Riwayat Undangan", "邀请记录")}
+            subtitle={bi(
+              "Undangan berlaku tujuh hari, hanya untuk email yang ditentukan, dan hanya dapat digunakan satu kali.",
+              "邀请有效期为七天，仅限指定邮箱，并且只能使用一次。",
+            )}
+          />
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[900px] text-xs">
+              <thead>
+                <tr className="border-b text-left text-slate-500">
+                  <th className="p-3">{bi("Email", "邮箱")}</th>
+                  <th className="p-3">{bi("Nama", "姓名")}</th>
+                  <th className="p-3">{bi("Role", "角色")}</th>
+                  <th className="p-3">{bi("Status", "状态")}</th>
+                  <th className="p-3">{bi("Kedaluwarsa", "到期时间")}</th>
+                  <th className="p-3"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {invitations.map((item) => (
+                  <tr key={item.id}>
+                    <td className="p-3 font-black">{item.email}</td>
+                    <td className="p-3">{item.full_name}</td>
+                    <td className="p-3">{roleLabel(item.role)}</td>
+                    <td className="p-3">
+                      <FullSuiteBadge
+                        tone={
+                          item.used_at
+                            ? "green"
+                            : item.revoked_at ||
+                                (item.expires_at &&
+                                  new Date(item.expires_at).getTime() <=
+                                    Date.now())
+                              ? "red"
+                              : "blue"
+                        }
+                      >
+                        {invitationStatus(item)}
+                      </FullSuiteBadge>
+                    </td>
+                    <td className="p-3">{formatDateTime(item.expires_at)}</td>
+                    <td className="p-3 text-right">
+                      {!item.used_at && !item.revoked_at && (
+                        <button
+                          onClick={() => revokeInvitation(item.id)}
+                          className={SMALL_BUTTON}
+                        >
+                          {bi("Batalkan", "撤销")}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {!invitations.length && (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="p-10 text-center font-bold text-slate-400"
+                    >
+                      {bi("Belum ada undangan.", "暂无邀请。")}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      <Card className="p-5 md:p-7">
+        <FullSuiteSectionTitle
+          title={bi("Pengguna & Role", "用户与角色")}
+          subtitle={bi(
+            "RLS tetap menjadi penegak akses utama di database.",
+            "RLS 仍是数据库中的主要访问控制机制。",
+          )}
+          action={
+            <button onClick={load} className={SMALL_BUTTON}>
+              {bi("Muat Ulang", "刷新")}
+            </button>
+          }
+        />
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-xs">
+            <thead>
+              <tr className="border-b text-left text-slate-500">
+                <th className="p-3">{bi("Nama", "姓名")}</th>
+                <th className="p-3">{bi("Email", "邮箱")}</th>
+                <th className="p-3">{bi("Role", "角色")}</th>
+                <th className="p-3">{bi("Status", "状态")}</th>
+                <th className="p-3">{bi("Terakhir Diubah", "最后更新")}</th>
+                <th className="p-3"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {profiles.map((item) => (
+                <tr key={item.id}>
+                  <td className="p-3 font-black">{item.full_name || "-"}</td>
+                  <td className="p-3">{item.email || "-"}</td>
+                  <td className="p-3">
+                    {admin ? (
+                      <select
+                        value={item.role}
+                        onChange={(event) =>
+                          updateProfile(
+                            item.id,
+                            event.target.value as AppRole,
+                            item.is_active,
+                          )
+                        }
+                        className={SMALL_BUTTON}
+                      >
+                        {APP_ROLES.map((key) => (
+                          <option key={key} value={key}>
+                            {roleLabel(key)}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <FullSuiteBadge>{roleLabel(item.role)}</FullSuiteBadge>
+                    )}
+                  </td>
+                  <td className="p-3">
+                    <FullSuiteBadge tone={item.is_active ? "green" : "red"}>
+                      {statusLabel(item.is_active ? "ACTIVE" : "INACTIVE")}
+                    </FullSuiteBadge>
+                  </td>
+                  <td className="p-3">{formatDateTime(item.updated_at)}</td>
+                  <td className="p-3 text-right whitespace-nowrap">
+                    {admin && (
+                      <>
+                        <button
+                          onClick={() =>
+                            updateProfile(item.id, item.role, !item.is_active)
+                          }
+                          className={SMALL_BUTTON}
+                        >
+                          {item.is_active
+                            ? bi("Nonaktifkan", "停用")
+                            : bi("Aktifkan", "启用")}
+                        </button>
+                        <button
+                          disabled={busy || !item.email}
+                          onClick={() => sendPasswordReset(item.email || "")}
+                          className={`${SMALL_BUTTON} ml-2`}
+                        >
+                          {bi("Reset Password", "重置密码")}
+                        </button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {(admin || profile?.role === "auditor") && (
+        <Card className="p-5 md:p-7">
+          <FullSuiteSectionTitle
+            title={bi("Riwayat Login", "登录历史")}
+            subtitle={bi(
+              "Event login/logout dicatat untuk observabilitas, bukan menggantikan Auth Audit Logs Supabase.",
+              "记录登录/登出事件用于可观测性，不替代 Supabase Auth 审计日志。",
+            )}
+          />
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[700px] text-xs">
+              <thead>
+                <tr className="border-b text-left text-slate-500">
+                  <th className="p-3">{bi("Waktu", "时间")}</th>
+                  <th className="p-3">{bi("Pengguna", "用户")}</th>
+                  <th className="p-3">{bi("Event", "事件")}</th>
+                  <th className="p-3">AAL</th>
+                  <th className="p-3">User Agent</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {events.map((item) => (
+                  <tr key={item.id}>
+                    <td className="p-3">{formatDateTime(item.created_at)}</td>
+                    <td className="p-3 font-black">
+                      {item.user_email || item.user_id}
+                    </td>
+                    <td className="p-3">
+                      <FullSuiteBadge>
+                        {loginEventLabel(item.event_type)}
+                      </FullSuiteBadge>
+                    </td>
+                    <td className="p-3">{item.aal || "-"}</td>
+                    <td
+                      className="p-3 max-w-md truncate"
+                      title={item.user_agent}
+                    >
+                      {item.user_agent || "-"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+function AttachmentsLibraryPage({ session, profile }: any) {
+  const [items, setItems] = useState<any[]>([]);
+  const [search, setSearch] = useState("");
+  const [entityType, setEntityType] = useState("production");
+  const [entityId, setEntityId] = useState("");
+  const load = async () => {
+    const { data, error } = await supabase
+      .from("attachments")
+      .select("*")
+      .order("created_at", {
+        ascending: false,
+      })
+      .limit(500);
+    if (error) return alert(errorText(error));
+    setItems(data || []);
+  };
+  useEffect(() => {
+    load();
+  }, []);
+  const openFile = async (item: any) => {
+    const { data, error } = await supabase.storage
+      .from("production-files")
+      .createSignedUrl(item.storage_path, 120);
+    if (error) return alert(errorText(error));
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  };
+  const filtered = items.filter(
+    (item) =>
+      !search ||
+      [item.file_name, item.entity_type, item.entity_id, item.mime_type]
+        .join(" ")
+        .toUpperCase()
+        .includes(search.toUpperCase()),
+  );
+  return (
+    <div className="space-y-6">
+      <Card className="p-5 md:p-7">
+        <FullSuiteSectionTitle
+          title={bi("Tambah Lampiran ke Entitas", "向实体添加附件")}
+          subtitle={bi(
+            "Bucket private; akses file diberikan melalui signed URL berumur pendek.",
+            "私有存储桶；通过短期签名 URL 访问文件。",
+          )}
+        />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <FullSuiteInput label={bi("Jenis Entitas", "实体类型")}>
+            <select
+              value={entityType}
+              onChange={(e) => setEntityType(e.target.value)}
+              className={INPUT_CLASS}
+            >
+              {[
+                "production",
+                "quality",
+                "work_order",
+                "batch",
+                "shift_closure",
+                "change_request",
+              ].map((item) => (
+                <option key={item} value={item}>
+                  {entityTypeLabel(item)}
+                </option>
+              ))}
+            </select>
+          </FullSuiteInput>
+          <FullSuiteInput label={bi("ID Entitas", "实体 ID")}>
+            <input
+              value={entityId}
+              onChange={(e) => setEntityId(e.target.value)}
+              className={INPUT_CLASS}
+            />
+          </FullSuiteInput>
+          <div className="flex items-end">
+            <button
+              onClick={load}
+              className="w-full px-4 py-3 rounded-xl bg-slate-900 text-white text-xs font-black"
+            >
+              {bi("Muat Ulang Library ", "刷新附件库 ")}
+            </button>
+          </div>
+        </div>
+        {entityId && (
+          <div className="mt-5">
+            <AttachmentManager
+              session={session}
+              profile={profile}
+              entityType={entityType}
+              entityId={entityId}
+            />
+          </div>
+        )}
+      </Card>
+      <Card className="p-5 md:p-7">
+        <FullSuiteSectionTitle
+          title={bi("Library Lampiran", "附件库")}
+          subtitle={bi(
+            "Cari berdasarkan nama, tipe entitas, ID, atau MIME type.",
+            "按名称、实体类型、ID 或 MIME 类型搜索。",
+          )}
+          action={
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={bi("Cari lampiran...", "搜索附件...")}
+              className={INPUT_CLASS}
+            />
+          }
+        />
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {filtered.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => openFile(item)}
+              className="rounded-2xl border border-slate-200 p-4 text-left hover:bg-slate-50"
+            >
+              <p className="text-xs font-black text-slate-900 truncate">
+                {item.file_name}
+              </p>
+              <p className="mt-1 text-[10px] font-bold text-slate-500">
+                {entityTypeLabel(item.entity_type)} #{item.entity_id}
+              </p>
+              <p className="mt-2 text-[9px] font-bold text-slate-400">
+                {item.mime_type || bi("file", "文件")} •{" "}
+                {numberValue(item.size_bytes).toLocaleString(appLocale())}
+                {bi(" byte ", " 字节 ")}
+              </p>
+            </button>
+          ))}
+          {!filtered.length && (
+            <p className="col-span-full py-10 text-center text-xs font-bold text-slate-400">
+              {bi("Tidak ada lampiran. ", "暂无附件。 ")}
+            </p>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+function OperationsOverviewPage({ onOpen, profile }: any) {
+  const [stats, setStats] = useState({
+    today: 0,
+    target: 0,
+    reject: 0,
+    openOrders: 0,
+    pendingApprovals: 0,
+    openShifts: 0,
+  });
+  const load = async () => {
+    const today = jakartaDateKey();
+    const [production, targets, quality, orders, approvals, shifts] =
+      await Promise.all([
+        supabase
+          .from("production_data")
+          .select("quantity")
+          .eq("date", today)
+          .is("deleted_at", null),
+        supabase
+          .from("production_targets")
+          .select("target_quantity")
+          .eq("target_date", today),
+        supabase
+          .from("production_quality")
+          .select("reject_quantity")
+          .eq("inspection_date", today),
+        supabase
+          .from("work_orders")
+          .select("id", {
+            count: "exact",
+            head: true,
+          })
+          .in("status", ["PLANNED", "IN_PROGRESS", "PAUSED"]),
+        supabase
+          .from("change_requests")
+          .select("id", {
+            count: "exact",
+            head: true,
+          })
+          .eq("status", "PENDING"),
+        supabase
+          .from("shift_closures")
+          .select("id", {
+            count: "exact",
+            head: true,
+          })
+          .not("status", "eq", "CLOSED"),
+      ]);
+    setStats({
+      today: (production.data || []).reduce(
+        (sum, row) => sum + numberValue(row.quantity),
+        0,
+      ),
+      target: (targets.data || []).reduce(
+        (sum, row) => sum + numberValue(row.target_quantity),
+        0,
+      ),
+      reject: (quality.data || []).reduce(
+        (sum, row) => sum + numberValue(row.reject_quantity),
+        0,
+      ),
+      openOrders: orders.count || 0,
+      pendingApprovals: approvals.count || 0,
+      openShifts: shifts.count || 0,
+    });
+  };
+  useEffect(() => {
+    load();
+  }, []);
+  const modules = [
+    [
+      "targets",
+      bi("Target vs Aktual", "目标与实际"),
+      bi(
+        "Tetapkan target per tanggal, shift, produk, dan WO.",
+        "按日期、班次、产品和工单设定目标。",
+      ),
+      "🎯",
+    ],
+    [
+      "quality",
+      bi("Quality Control", "质量控制"),
+      bi(
+        "Good, reject, rework, defect, dan corrective action.",
+        "管理良品、不良品、返工、缺陷和纠正措施。",
+      ),
+      "✅",
+    ],
+    [
+      "workorders",
+      bi("Work Order & Batch", "工单与批次"),
+      bi(
+        "Traceability, barcode, mesin, line, dan customer.",
+        "追溯、条码、机器、产线和客户。",
+      ),
+      "🏷️",
+    ],
+    [
+      "shift",
+      bi("Shift Closing", "班次结算"),
+      bi(
+        "Ringkasan dan serah terima dengan review supervisor.",
+        "汇总与交接，并由主管审核。",
+      ),
+      "🕘",
+    ],
+    [
+      "approvals",
+      bi("Approval & Trash", "审批与回收站"),
+      bi(
+        "Persetujuan perubahan, restore, dan purge terkontrol.",
+        "受控的变更审批、恢复和永久清除。",
+      ),
+      "🛡️",
+    ],
+    [
+      "master",
+      bi("Master Data", "主数据"),
+      bi(
+        "Standarisasi produk, warna, mesin, line, dan defect.",
+        "标准化产品、颜色、机器、产线和缺陷。",
+      ),
+      "🗂️",
+    ],
+    [
+      "attachments",
+      bi("Lampiran", "附件"),
+      bi(
+        "Foto reject, bukti produksi, dokumen WO, dan lainnya.",
+        "不良品照片、生产凭证、工单文档等。",
+      ),
+      "📎",
+    ],
+    [
+      "reports",
+      bi("Laporan Otomatis", "自动报告"),
+      bi(
+        "Arsip, email, webhook, Telegram, atau WhatsApp provider.",
+        "归档、Webhook 或外部渠道。",
+      ),
+      "📨",
+    ],
+    [
+      "users",
+      bi("Pengguna & Keamanan", "用户与安全"),
+      bi(
+        "Role, status akun, undangan, login events, dan MFA.",
+        "角色、账户状态、邀请、登录事件和 MFA。",
+      ),
+      "👥",
+    ],
+  ].filter(
+    ([key]) =>
+      key !== "reports" ||
+      ["admin", "supervisor", "auditor"].includes(profile?.role),
+  );
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+        <FullSuiteStat
+          label={bi("Produksi Hari Ini", "今日产量")}
+          value={stats.today.toLocaleString(appLocale())}
+          tone="blue"
+        />
+        <FullSuiteStat
+          label={bi("Target Hari Ini", "今日目标")}
+          value={stats.target.toLocaleString(appLocale())}
+          tone="violet"
+        />
+        <FullSuiteStat
+          label={bi("Reject Hari Ini", "今日不良数")}
+          value={stats.reject.toLocaleString(appLocale())}
+          tone="red"
+        />
+        <FullSuiteStat
+          label={bi("WO Aktif", "启用工单")}
+          value={stats.openOrders}
+          tone="green"
+        />
+        <FullSuiteStat
+          label={bi("Approval Pending", "待审批")}
+          value={stats.pendingApprovals}
+          tone="amber"
+        />
+        <FullSuiteStat
+          label={bi("Shift Terbuka", "开放班次")}
+          value={stats.openShifts}
+          tone="slate"
+        />
+      </div>
+      <Card className="p-5 md:p-7">
+        <FullSuiteSectionTitle
+          title={bi("Operations Suite", "运营套件")}
+          subtitle={bi(
+            "Semua modul bersifat additive dan memiliki tabel, state, serta RLS tersendiri.",
+            "所有模块均为新增模块，并拥有独立的表、状态和 RLS。",
+          )}
+          action={
+            <button onClick={load} className={SMALL_BUTTON}>
+              {bi("Muat Ulang ", "刷新 ")}
+            </button>
+          }
+        />
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          {modules.map(([key, title, description, icon]) => (
+            <button
+              key={key}
+              onClick={() => onOpen(key)}
+              className="rounded-2xl border border-slate-200 p-5 text-left hover:border-blue-300 hover:bg-blue-50/30 transition-all"
+            >
+              <span className="text-2xl">{icon}</span>
+              <p className="mt-3 text-sm font-black text-slate-900">{title}</p>
+              <p className="mt-2 text-[11px] font-bold text-slate-500 leading-relaxed">
+                {description}
+              </p>
+            </button>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+function OperationsSuitePage({
+  session,
+  profile,
+  initialModule = "overview",
+}: any) {
+  const [module, setModule] = useState(initialModule);
+  useEffect(() => setModule(initialModule), [initialModule]);
+  const allModules = [
+    ["overview", bi("Ringkasan", "概览")],
+    ["targets", bi("Target", "目标")],
+    ["quality", bi("QC", "质检")],
+    ["workorders", bi("WO & Batch", "工单与批次")],
+    ["shift", bi("Shift", "班次")],
+    ["approvals", bi("Approval", "审批")],
+    ["master", bi("Master", "主数据")],
+    ["attachments", bi("Lampiran", "附件")],
+    ["reports", bi("Laporan", "报告")],
+    ["users", bi("Pengguna", "用户")],
+  ];
+  const allowed = allModules.filter(([key]) => {
+    if (key === "approvals" && profile?.role === "viewer") return false;
+    if (
+      key === "reports" &&
+      !["admin", "supervisor", "auditor"].includes(profile?.role)
+    )
+      return false;
+    if (
+      key === "master" &&
+      !["admin", "supervisor", "operator", "qc"].includes(profile?.role)
+    )
+      return false;
+    return true;
+  });
+  return (
+    <div className="space-y-5">
+      <div className="overflow-x-auto">
+        <div className="inline-flex min-w-full lg:min-w-0 bg-white border border-slate-200 rounded-2xl p-1 shadow-sm">
+          {allowed.map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setModule(key)}
+              className={`shrink-0 flex-1 px-3 py-2.5 rounded-xl text-[10px] font-black transition-all ${module === key ? "bg-slate-900 text-white shadow" : "text-slate-500 hover:text-slate-900"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {module === "overview" && (
+        <OperationsOverviewPage onOpen={setModule} profile={profile} />
+      )}
+      {module === "targets" && (
+        <ProductionTargetsPage session={session} profile={profile} />
+      )}
+      {module === "quality" && (
+        <QualityControlPage session={session} profile={profile} />
+      )}
+      {module === "workorders" && (
+        <WorkOrdersPage session={session} profile={profile} />
+      )}
+      {module === "shift" && (
+        <ShiftClosingPage session={session} profile={profile} />
+      )}
+      {module === "approvals" && (
+        <ApprovalsAndTrashPage session={session} profile={profile} />
+      )}
+      {module === "master" && (
+        <MasterDataPage session={session} profile={profile} />
+      )}
+      {module === "attachments" && (
+        <AttachmentsLibraryPage session={session} profile={profile} />
+      )}
+      {module === "reports" && (
+        <ScheduledReportsPage session={session} profile={profile} />
+      )}
+      {module === "users" && (
+        <UsersAndSecurityPage session={session} profile={profile} />
+      )}
+    </div>
+  );
+}
+function InvitationSignupScreen({ token, onCancel }: any) {
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [detail, setDetail] = useState<any>(null);
+  const [error, setError] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [success, setSuccess] = useState("");
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      setLoading(true);
+      setError("");
+      const { data, error: queryError } = await supabase.rpc(
+        "get_public_invitation",
+        {
+          p_token: token,
+        },
+      );
+      if (!active) return;
+      if (queryError) {
+        setError(
+          errorText(queryError, bi("Undangan tidak valid.", "邀请无效。")),
+        );
+        setDetail(null);
+      } else {
+        const result = Array.isArray(data) ? data[0] : data;
+        if (!result?.valid) {
+          setError(
+            localizeErrorMessage(
+              result?.reason || "INVITATION_NOT_FOUND",
+              activeLanguage,
+            ),
+          );
+          setDetail(null);
+        } else {
+          setDetail(result);
+        }
+      }
+      setLoading(false);
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [token]);
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!detail?.email) return;
+    if (password.length < 8)
+      return setError(
+        bi("Password minimal delapan karakter.", "密码至少需要八个字符。"),
+      );
+    if (password !== confirmPassword)
+      return setError(
+        bi("Konfirmasi password tidak sama.", "两次密码不一致。"),
+      );
+    setBusy(true);
+    setError("");
+    try {
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: detail.email,
+        password,
+        options: {
+          data: {
+            full_name: detail.full_name,
+            invitation_token: token,
+            preferred_language: activeLanguage,
+          },
+        },
+      });
+      if (signUpError) throw signUpError;
+      if (data.session) {
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.search = "";
+        cleanUrl.hash = "";
+        window.history.replaceState({}, "", cleanUrl.toString());
+        setSuccess(
+          bi(
+            "Akun berhasil dibuat dan Anda telah masuk.",
+            "账户创建成功，您已登录。",
+          ),
+        );
+      } else {
+        setSuccess(
+          bi(
+            "Akun berhasil dibuat. Periksa email untuk konfirmasi sebelum login.",
+            "账户创建成功。请先查收邮件并完成确认，然后再登录。",
+          ),
+        );
+      }
+    } catch (submitError) {
+      setError(
+        errorText(submitError, bi("Pembuatan akun gagal.", "创建账户失败。")),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="min-h-screen w-full flex items-center justify-center bg-slate-950 relative overflow-hidden p-4">
+      <div className="absolute top-[-20%] left-[-10%] w-[55%] h-[55%] bg-blue-600/20 rounded-full blur-[130px]" />
+      <div className="absolute bottom-[-20%] right-[-10%] w-[55%] h-[55%] bg-violet-600/20 rounded-full blur-[130px]" />
+      <div className="w-full max-w-lg relative z-10">
+        <div className="bg-white/10 backdrop-blur-2xl border border-white/20 rounded-[36px] p-7 md:p-10 shadow-2xl">
+          <div className="text-center mb-7">
+            <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-700 rounded-2xl flex items-center justify-center shadow-2xl mx-auto mb-5">
+              <span className="text-white font-black text-3xl italic">B</span>
+            </div>
+            <h1 className="text-xl md:text-2xl font-black text-white">
+              {bi("Aktivasi Akun BUYMORE", "激活 BUYMORE 账户")}
+            </h1>
+            <p className="mt-2 text-xs font-bold text-blue-200/70">
+              {bi(
+                "Gunakan undangan resmi untuk membuat password akun.",
+                "使用正式邀请创建账户密码。",
+              )}
+            </p>
+          </div>
+
+          {loading ? (
+            <p className="py-12 text-center text-sm font-black text-blue-200 animate-pulse">
+              {bi("Memeriksa undangan...", "正在验证邀请...")}
+            </p>
+          ) : detail ? (
+            <form onSubmit={submit} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <p className="text-[9px] font-black uppercase tracking-wider text-blue-300/60">
+                    {bi("Nama", "姓名")}
+                  </p>
+                  <p className="mt-1 text-sm font-black text-white">
+                    {detail.full_name}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <p className="text-[9px] font-black uppercase tracking-wider text-blue-300/60">
+                    {bi("Role", "角色")}
+                  </p>
+                  <p className="mt-1 text-sm font-black text-white">
+                    {roleLabel(detail.role)}
+                  </p>
+                </div>
+              </div>
+              <FullSuiteInput
+                label={
+                  <span className="text-blue-200">{bi("Email", "邮箱")}</span>
+                }
+              >
+                <input
+                  readOnly
+                  value={detail.email}
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm outline-none opacity-80"
+                />
+              </FullSuiteInput>
+              <FullSuiteInput
+                label={
+                  <span className="text-blue-200">
+                    {bi("Password Baru", "新密码")}
+                  </span>
+                }
+              >
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm outline-none focus:bg-white/10 focus:border-blue-500/50"
+                />
+              </FullSuiteInput>
+              <FullSuiteInput
+                label={
+                  <span className="text-blue-200">
+                    {bi("Konfirmasi Password", "确认密码")}
+                  </span>
+                }
+              >
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm outline-none focus:bg-white/10 focus:border-blue-500/50"
+                />
+              </FullSuiteInput>
+              {error && (
+                <p className="rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-xs font-bold text-red-300">
+                  {error}
+                </p>
+              )}
+              {success && (
+                <p className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-xs font-bold text-emerald-300">
+                  {success}
+                </p>
+              )}
+              <Button
+                type="submit"
+                disabled={busy || Boolean(success)}
+                className="w-full py-4"
+              >
+                {busy
+                  ? bi("Membuat Akun...", "正在创建账户...")
+                  : bi("Buat Akun", "创建账户")}
+              </Button>
+            </form>
+          ) : (
+            <div className="space-y-4">
+              <p className="rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-4 text-sm font-bold text-red-300">
+                {error || bi("Undangan tidak tersedia.", "邀请不可用。")}
+              </p>
+            </div>
+          )}
+
+          <button
+            onClick={onCancel}
+            className="mt-6 w-full text-center text-[10px] font-black uppercase tracking-wider text-white/50 hover:text-white"
+          >
+            {bi("Kembali ke Login", "返回登录")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+function PasswordRecoveryScreen({ onComplete, onLogout }: any) {
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (password.length < 8)
+      return setError(
+        bi("Password minimal delapan karakter.", "密码至少需要八个字符。"),
+      );
+    if (password !== confirmPassword)
+      return setError(
+        bi("Konfirmasi password tidak sama.", "两次密码不一致。"),
+      );
+    setBusy(true);
+    setError("");
+    const { error: updateError } = await supabase.auth.updateUser({
+      password,
+    });
+    setBusy(false);
+    if (updateError) return setError(errorText(updateError));
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.search = "";
+    cleanUrl.hash = "";
+    window.history.replaceState({}, "", cleanUrl.toString());
+    alert(bi("Password berhasil diperbarui.", "密码已成功更新。"));
+    onComplete();
+  };
+  return (
+    <div className="min-h-screen w-full flex items-center justify-center bg-slate-950 p-4">
+      <Card className="w-full max-w-md p-7 md:p-9 border-l-8 border-l-blue-600">
+        <h1 className="text-xl font-black text-slate-900">
+          {bi("Buat Password Baru", "设置新密码")}
+        </h1>
+        <p className="mt-2 text-xs font-bold text-slate-500">
+          {bi(
+            "Masukkan password baru untuk akun yang sedang dipulihkan.",
+            "请为正在恢复的账户输入新密码。",
+          )}
+        </p>
+        <form onSubmit={submit} className="mt-6 space-y-4">
+          <FullSuiteInput label={bi("Password Baru", "新密码")}>
+            <input
+              type="password"
+              autoComplete="new-password"
+              minLength={8}
+              required
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className={INPUT_CLASS}
+            />
+          </FullSuiteInput>
+          <FullSuiteInput label={bi("Konfirmasi Password", "确认密码")}>
+            <input
+              type="password"
+              autoComplete="new-password"
+              minLength={8}
+              required
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              className={INPUT_CLASS}
+            />
+          </FullSuiteInput>
+          {error && (
+            <p className="rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-xs font-bold text-red-600">
+              {error}
+            </p>
+          )}
+          <Button type="submit" disabled={busy} className="w-full">
+            {busy
+              ? bi("Menyimpan...", "正在保存...")
+              : bi("Simpan Password", "保存密码")}
+          </Button>
+          <button
+            type="button"
+            onClick={onLogout}
+            className="w-full text-[10px] font-black text-slate-400 hover:text-slate-700"
+          >
+            {bi("Batalkan dan Keluar", "取消并退出")}
+          </button>
+        </form>
+      </Card>
+    </div>
+  );
+}
+function MfaChallengeScreen({ session, onVerified, onLogout }: any) {
+  const [factor, setFactor] = useState<any>(null);
+  const [code, setCode] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      const { data, error: factorError } =
+        await supabase.auth.mfa.listFactors();
+      if (!active) return;
+      if (factorError) {
+        setError(errorText(factorError));
+      } else {
+        const verified = (data?.totp || []).find(
+          (item: any) => item.status === "verified",
+        );
+        setFactor(verified || null);
+        if (!verified)
+          setError(
+            bi(
+              "Faktor MFA terverifikasi tidak ditemukan.",
+              "未找到已验证的 MFA 因子。",
+            ),
+          );
+      }
+      setLoading(false);
+    };
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [session?.user?.id]);
+  const verify = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!factor?.id || !code.trim()) return;
+    setBusy(true);
+    setError("");
+    const { error: verifyError } = await supabase.auth.mfa.challengeAndVerify({
+      factorId: factor.id,
+      code: code.trim(),
+    });
+    setBusy(false);
+    if (verifyError) return setError(errorText(verifyError));
+    await supabase.auth.refreshSession();
+    onVerified();
+  };
+  return (
+    <div className="min-h-screen w-full flex items-center justify-center bg-slate-950 p-4">
+      <Card className="w-full max-w-md p-7 md:p-9 border-l-8 border-l-violet-600">
+        <h1 className="text-xl font-black text-slate-900">
+          {bi("Verifikasi MFA", "验证 MFA")}
+        </h1>
+        <p className="mt-2 text-xs font-bold text-slate-500">
+          {bi(
+            "Masukkan kode dari aplikasi authenticator untuk melanjutkan.",
+            "输入身份验证器应用中的验证码以继续。",
+          )}
+        </p>
+        {loading ? (
+          <p className="py-10 text-center text-xs font-black text-violet-600 animate-pulse">
+            {bi("Memuat faktor MFA...", "正在加载 MFA 因子...")}
+          </p>
+        ) : (
+          <form onSubmit={verify} className="mt-6 space-y-4">
+            <FullSuiteInput label={bi("Kode 6 Digit", "6 位验证码")}>
+              <input
+                autoFocus
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={8}
+                required
+                value={code}
+                onChange={(event) => setCode(event.target.value)}
+                className={`${INPUT_CLASS} text-center tracking-[0.35em]`}
+              />
+            </FullSuiteInput>
+            {error && (
+              <p className="rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-xs font-bold text-red-600">
+                {error}
+              </p>
+            )}
+            <Button type="submit" disabled={busy || !factor} className="w-full">
+              {busy
+                ? bi("Memverifikasi...", "正在验证...")
+                : bi("Verifikasi", "验证")}
+            </Button>
+            <button
+              type="button"
+              onClick={onLogout}
+              className="w-full text-[10px] font-black text-slate-400 hover:text-slate-700"
+            >
+              {bi("Keluar dari Akun", "退出账户")}
+            </button>
+          </form>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/** MAIN APPLICATION WITH FULL OPERATIONS SUITE **/
+function ProductionSystem() {
+  const [session, setSession] = useState<any>(null);
+  const [profile, setProfile] = useState<AppProfile | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [emailInput, setEmailInput] = useState("");
+  const [passcode, setPasscode] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [language, setLanguage] = useState<AppLanguage>(() => {
+    const queryLanguage =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("lang")
+        : null;
+    return normalizeLanguage(
+      queryLanguage ||
+        (typeof window !== "undefined"
+          ? window.localStorage.getItem("app_lang")
+          : "id"),
+    );
+  });
+  const [inviteToken, setInviteToken] = useState(() =>
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("invite") || ""
+      : "",
+  );
+  const [passwordRecoveryMode, setPasswordRecoveryMode] = useState(() =>
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("recovery") === "1"
+      : false,
+  );
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [darkMode, setDarkMode] = useState(
+    () => localStorage.getItem("buymore_dark_mode") === "true",
+  );
+  const [activeTab, setActiveTab] = useState("production");
+  const online = useOnlineStatus();
+  const [records, setRecords] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [productionRefresh, setProductionRefresh] = useState(0);
+  const [form, setForm] = useState({
+    date: jakartaDateKey(),
+    color: "",
+    shift: "Siang",
+    product: "",
+    quantity: "",
+    note: "",
+  });
+  const [advanced, setAdvanced] = useState<ProductionAdvancedFields>(
+    DEFAULT_ADVANCED_FIELDS,
+  );
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [filterDate, setFilterDate] = useState("");
+  const [filterShift, setFilterShift] = useState("Semua");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [displayLimit, setDisplayLimit] = useState(50);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [editingId, setEditingId] = useState<any>(null);
+  const [tempNote, setTempNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [detailRecord, setDetailRecord] = useState<any>(null);
+  const [offlineQueue, setOfflineQueue] = useState<any[]>([]);
+  const [showColumns, setShowColumns] = useState(false);
+  const [visibleColumns, setVisibleColumns] = useState<string[]>([
+    "date",
+    "time",
+    "shift",
+    "product",
+    "qty",
+    "note",
+    "user",
+    "actions",
+  ]);
+  const noteUpdateInFlightRef = React.useRef<Set<any>>(new Set());
+  const noteEditCancelledRef = React.useRef<Set<any>>(new Set());
+  const realtimeTimerRef = React.useRef<number | null>(null);
+  const [logs, setLogs] = useState<any[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsPage, setLogsPage] = useState(0);
+  const [logsLimit] = useState(30);
+  const activeTabRef = React.useRef(activeTab);
+  const logsPageRef = React.useRef(logsPage);
+  const [logsSnapshotId, setLogsSnapshotId] = useState<any>(null);
+  const [logSearch, setLogSearch] = useState("");
+  const [masterItems, setMasterItems] = useState<MasterItem[]>([]);
+  const [workOrders, setWorkOrders] = useState<any[]>([]);
+  const [batches, setBatches] = useState<any[]>([]);
+  const [favorites, setFavorites] = useState<any[]>([]);
+  const [productionPresets, setProductionPresets] = useState<any[]>([]);
+  const [appSettings, setAppSettings] = useState<Record<string, any>>({});
+  setActiveLanguage(language);
+  const text = {
+    id: {
+      title: bi("PRODUCTION BUYMORE", "BUYMORE 生产中心"),
+      add: bi("Input Produksi", "生产录入"),
+      result: bi("Hasil Produksi", "生产结果"),
+      date: bi("Tanggal", "日期"),
+      time: bi("Waktu", "时间"),
+      color: bi("Warna", "颜色"),
+      shift: bi("Shift", "班次"),
+      product: bi("Produk", "产品"),
+      qty: "Qty",
+      note: bi("Catatan", "备注"),
+      save: bi("Simpan Data", "保存数据"),
+      saveMore: bi("Simpan & Tambah Lagi", "保存并继续"),
+      export: bi("Export Excel", "导出 Excel"),
+      delete: bi("Hapus", "删除"),
+      day: bi("Siang", "白班"),
+      night: bi("Malam", "夜班"),
+      allShift: bi("Semua Shift", "全部班次"),
+      loading: bi("Sinkronisasi Cloud...", "正在同步云端..."),
+      empty: bi("Tidak ada data.", "暂无数据。"),
+      incomplete: bi("Data belum lengkap.", "数据不完整。"),
+      noData: bi("Tidak ada data untuk kriteria ini.", "当前条件下没有数据。"),
+      show: bi("Tampilkan", "显示"),
+      logout: bi("Log Out", "退出登录"),
+      enter: bi("Masuk Sistem", "登录系统"),
+      total: bi("TOTAL PRODUKSI", "生产总量"),
+      user: bi("Pengguna", "用户"),
+      navProd: bi("Produksi", "生产看板"),
+      navAnalytics: bi("Analisis", "数据分析"),
+      navOps: bi("Operasional", "运营中心"),
+      navLogs: bi("Log Aktivitas", "操作日志"),
+      logTime: bi("Waktu Sistem", "系统时间"),
+      logAction: bi("Tipe", "类型"),
+      logDesc: bi("Deskripsi", "说明"),
+      logEmpty: bi("Belum ada riwayat aktivitas.", "暂无操作记录。"),
+    },
+    cn: {
+      title: "BUYMORE 生产中心",
+      add: "生产输入",
+      result: "生产结果",
+      date: "日期",
+      time: "时间",
+      color: "颜色",
+      shift: "班次",
+      product: "产品",
+      qty: "数量",
+      note: "备注",
+      save: "保存数据",
+      saveMore: "保存并继续",
+      export: "导出 Excel",
+      delete: "删除",
+      day: "白班",
+      night: "夜班",
+      allShift: "所有班次",
+      loading: "同步中...",
+      empty: "没有数据。",
+      incomplete: "数据不完整。",
+      noData: "该条件没有数据。",
+      show: "显示",
+      logout: "登出",
+      enter: "进入系统",
+      total: "总生产量",
+      user: "记录员",
+      navProd: "生产看板",
+      navAnalytics: "数据分析",
+      navOps: "运营中心",
+      navLogs: "操作日志",
+      logTime: "系统时间",
+      logAction: "类型",
+      logDesc: "详细说明",
+      logEmpty: "暂无操作日志。",
+    },
+  };
+  const t = text[language as keyof typeof text];
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+  useEffect(() => {
+    logsPageRef.current = logsPage;
+  }, [logsPage]);
+  const role = profile?.role || "operator";
+  const canWriteProduction = ["admin", "supervisor", "operator"].includes(role);
+  const canDeleteProduction = ["admin", "supervisor", "operator"].includes(
+    role,
+  );
+  const canEditNote = ["admin", "supervisor", "operator"].includes(role);
+  const setting = (key: string, fallback: any) =>
+    Object.prototype.hasOwnProperty.call(appSettings, key)
+      ? appSettings[key]
+      : fallback;
+  const cacheKey = session?.user?.id
+    ? `cached_production_records:${session.user.id}`
+    : "";
+  const draftKey = session?.user?.id
+    ? `production_draft:${session.user.id}`
+    : "";
+  const queueKey = session?.user?.id
+    ? `production_offline_queue:${session.user.id}`
+    : "";
+  const columnsKey = session?.user?.id
+    ? `production_columns:${session.user.id}`
+    : "";
+  const loadProfile = async (activeSession: any) => {
+    if (!activeSession?.user?.id) {
+      setProfile(null);
+      return;
+    }
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", activeSession.user.id)
+      .maybeSingle();
+    if (error)
+      console.error(bi("Gagal memuat profil:", "加载用户资料失败："), error);
+    const fallback: AppProfile = {
+      id: activeSession.user.id,
+      email: activeSession.user.email,
+      full_name:
+        activeSession.user.user_metadata?.full_name || activeSession.user.email,
+      role: "operator",
+      is_active: true,
+    };
+    const nextProfile = (data || fallback) as AppProfile;
+    if (nextProfile.is_active === false) {
+      alert(
+        bi("Akun ini dinonaktifkan administrator.", "此账户已被管理员停用。"),
+      );
+      await supabase.auth.signOut();
+      return;
+    }
+    setProfile(nextProfile);
+    if (nextProfile.language === "id" || nextProfile.language === "cn") {
+      setLanguage(normalizeLanguage(nextProfile.language));
+    }
+  };
+  const evaluateMfaRequirement = async (activeSession: any) => {
+    if (!activeSession?.user?.id) {
+      setMfaRequired(false);
+      return;
+    }
+    const { data, error } =
+      await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (error) {
+      console.warn(
+        bi("Status MFA tidak dapat diperiksa:", "无法检查 MFA 状态："),
+        error,
+      );
+      setMfaRequired(false);
+      return;
+    }
+    setMfaRequired(data?.currentLevel !== "aal2" && data?.nextLevel === "aal2");
+  };
+  useEffect(() => {
+    let active = true;
+    supabase.auth
+      .getSession()
+      .then(async ({ data: { session: initialSession } }) => {
+        if (!active) return;
+        setSession(initialSession);
+        await loadProfile(initialSession);
+        await evaluateMfaRequirement(initialSession);
+        if (active) setAuthLoading(false);
+      })
+      .catch((error) => {
+        console.error(
+          bi("Session awal tidak dapat dimuat:", "无法加载初始会话："),
+          error,
+        );
+        if (active) setAuthLoading(false);
+      });
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      setSession(nextSession);
+      if (event === "PASSWORD_RECOVERY") setPasswordRecoveryMode(true);
+      if (event === "SIGNED_OUT") {
+        setPasswordRecoveryMode(false);
+        setMfaRequired(false);
+      }
+      window.setTimeout(() => {
+        if (!active) return;
+        void (async () => {
+          await loadProfile(nextSession);
+          await evaluateMfaRequirement(nextSession);
+          if (
+            nextSession?.user?.id &&
+            [
+              "SIGNED_IN",
+              "PASSWORD_RECOVERY",
+              "MFA_CHALLENGE_VERIFIED",
+            ].includes(event)
+          ) {
+            const aalResult =
+              await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+            await supabase.from("app_login_events").insert({
+              user_id: nextSession.user.id,
+              user_email: nextSession.user.email,
+              event_type: event,
+              aal: aalResult.data?.currentLevel || null,
+              user_agent: navigator.userAgent,
+            });
+          }
+        })();
+      }, 0);
+    });
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+  useEffect(() => {
+    setActiveLanguage(language);
+    localStorage.setItem("app_lang", language);
+    localStorage.setItem("buymore_dark_mode", String(darkMode));
+    document.documentElement.lang = language === "cn" ? "zh-CN" : "id";
+    if (session?.user?.id && profile?.language !== language) {
+      void supabase
+        .rpc("update_my_language", {
+          p_language: language,
+        })
+        .then(({ error }) => {
+          if (error) {
+            console.warn(
+              bi("Bahasa profil tidak dapat disimpan:", "无法保存用户语言："),
+              error,
+            );
+          } else {
+            setProfile((previous) =>
+              previous ? { ...previous, language } : previous,
+            );
+          }
+        });
+    }
+  }, [language, darkMode, session?.user?.id, profile?.language]);
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    try {
+      const cached = safeJson(localStorage.getItem(cacheKey), []);
+      if (Array.isArray(cached) && cached.length) {
+        setRecords(cached);
+        setLoading(false);
+      }
+      const draft = safeJson(localStorage.getItem(draftKey), null);
+      if (draft?.form)
+        setForm({
+          ...form,
+          ...draft.form,
+        });
+      if (draft?.advanced)
+        setAdvanced({
+          ...DEFAULT_ADVANCED_FIELDS,
+          ...draft.advanced,
+        });
+      const queued = safeJson(localStorage.getItem(queueKey), []);
+      setOfflineQueue(Array.isArray(queued) ? queued : []);
+      const storedColumns = safeJson(localStorage.getItem(columnsKey), null);
+      if (Array.isArray(storedColumns) && storedColumns.length)
+        setVisibleColumns(storedColumns);
+    } catch (error) {
+      console.error(
+        bi("Cache pengguna tidak dapat dibaca:", "无法读取用户缓存："),
+        error,
+      );
+    }
+  }, [session?.user?.id]);
+  useEffect(() => {
+    if (!draftKey) return;
+    localStorage.setItem(
+      draftKey,
+      JSON.stringify({
+        form,
+        advanced,
+        saved_at: new Date().toISOString(),
+      }),
+    );
+  }, [form, advanced, draftKey]);
+  useEffect(() => {
+    if (columnsKey)
+      localStorage.setItem(columnsKey, JSON.stringify(visibleColumns));
+  }, [visibleColumns, columnsKey]);
+  const loadSupportingData = async () => {
+    if (!session) return;
+    const [
+      masterResult,
+      orderResult,
+      batchResult,
+      favoriteResult,
+      settingsResult,
+    ] = await Promise.all([
+      supabase
+        .from("master_items")
+        .select("*")
+        .eq("is_active", true)
+        .order("name"),
+      supabase
+        .from("work_orders")
+        .select("*")
+        .in("status", ["PLANNED", "IN_PROGRESS", "PAUSED"])
+        .order("code"),
+      supabase
+        .from("production_batches")
+        .select("*")
+        .eq("status", "OPEN")
+        .order("batch_code"),
+      supabase
+        .from("user_favorites")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .in("item_type", ["PRODUCT", "PRODUCTION_PRESET"])
+        .order("created_at", {
+          ascending: false,
+        }),
+      supabase.from("app_settings").select("key,value"),
+    ]);
+    setMasterItems((masterResult.data || []) as MasterItem[]);
+    setWorkOrders(orderResult.data || []);
+    setBatches(batchResult.data || []);
+    const preferenceRows = favoriteResult.data || [];
+    setFavorites(
+      preferenceRows.filter((item: any) => item.item_type === "PRODUCT"),
+    );
+    setProductionPresets(
+      preferenceRows.filter(
+        (item: any) => item.item_type === "PRODUCTION_PRESET",
+      ),
+    );
+    const nextSettings: Record<string, any> = {};
+    (settingsResult.data || []).forEach((item: any) => {
+      nextSettings[item.key] = safeJson(item.value, item.value);
+    });
+    setAppSettings(nextSettings);
+  };
+  useEffect(() => {
+    loadSupportingData();
+  }, [session?.user?.id]);
+  const persistRecords = (next: any[]) => {
+    setRecords(next);
+    if (cacheKey) localStorage.setItem(cacheKey, JSON.stringify(next));
+  };
+  const fetchData = async () => {
+    if (!session) return;
+    if (!records.length) setLoading(true);
+    const from = currentPage * displayLimit;
+    const to = from + displayLimit - 1;
+    let query = supabase
+      .from("production_data")
+      .select("*")
+      .is("deleted_at", null)
+      .order("id", {
+        ascending: false,
+      });
+    if (filterDate) query = query.eq("date", filterDate);
+    else query = query.range(from, to);
+    const { data, error } = await query;
+    if (error)
+      console.error(
+        bi("Gagal sinkronisasi produksi:", "生产同步失败："),
+        error,
+      );
+    else if (data) persistRecords(data);
+    setLoading(false);
+  };
+  const fetchLogs = async (resetSnapshot = false, pageOverride = logsPage) => {
+    if (!session) return;
+    setLogsLoading(true);
+    try {
+      let snapshot = resetSnapshot ? null : logsSnapshotId;
+      if (!snapshot) {
+        const { data: newest, error: newestError } = await supabase
+          .from("activity_logs")
+          .select("id")
+          .order("id", {
+            ascending: false,
+          })
+          .limit(1)
+          .maybeSingle();
+        if (newestError) throw newestError;
+        snapshot = newest?.id || null;
+        setLogsSnapshotId(snapshot);
+      }
+      const safePage = Math.max(0, Number(pageOverride) || 0);
+      const from = safePage * logsLimit;
+      const to = from + logsLimit - 1;
+      let query = supabase
+        .from("activity_logs")
+        .select("*")
+        .order("id", {
+          ascending: false,
+        })
+        .range(from, to);
+      if (snapshot) query = query.lte("id", snapshot);
+      const safeSearch = logSearch.trim().replace(/[,%()]/g, " ");
+      if (safeSearch) {
+        const pattern = `%${safeSearch}%`;
+        query = query.or(
+          [
+            `description.ilike.${pattern}`,
+            `description_id.ilike.${pattern}`,
+            `description_zh.ilike.${pattern}`,
+            `user_name.ilike.${pattern}`,
+            `activity_type.ilike.${pattern}`,
+            `table_name.ilike.${pattern}`,
+            `record_id.ilike.${pattern}`,
+          ].join(","),
+        );
+      }
+      const { data, error } = await query;
+      if (error) throw error;
+      setLogs(data || []);
+    } catch (error) {
+      console.error(bi("Gagal memuat Audit Log:", "加载审计日志失败："), error);
+      setLogs([]);
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+  useEffect(() => {
+    setLogsPage(0);
+    setLogsSnapshotId(null);
+  }, [logSearch]);
+  useEffect(() => {
+    if (!session) return;
+    if (activeTab === "production") fetchData();
+    if (activeTab === "logs") fetchLogs(false);
+  }, [
+    activeTab,
+    currentPage,
+    logsPage,
+    session?.user?.id,
+    filterDate,
+    displayLimit,
+    productionRefresh,
+    logSearch,
+  ]);
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    const productionChannel = supabase
+      .channel(`realtime-production-${session.user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "production_data",
+        },
+        () => {
+          if (realtimeTimerRef.current)
+            window.clearTimeout(realtimeTimerRef.current);
+          realtimeTimerRef.current = window.setTimeout(
+            () => setProductionRefresh((value) => value + 1),
+            180,
+          );
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "activity_logs",
+        },
+        () => {
+          if (activeTabRef.current === "logs" && logsPageRef.current === 0) {
+            setLogsSnapshotId(null);
+            window.setTimeout(() => fetchLogs(true, 0), 100);
+          }
+        },
+      )
+      .subscribe();
+    const supportChannel = supabase
+      .channel(`realtime-support-${session.user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "master_items",
+        },
+        loadSupportingData,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "work_orders",
+        },
+        loadSupportingData,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "production_batches",
+        },
+        loadSupportingData,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "app_settings",
+        },
+        loadSupportingData,
+      )
+      .subscribe();
+    return () => {
+      if (realtimeTimerRef.current)
+        window.clearTimeout(realtimeTimerRef.current);
+      supabase.removeChannel(productionChannel);
+      supabase.removeChannel(supportChannel);
+    };
+  }, [session?.user?.id]);
+  const saveQueue = (next: any[]) => {
+    setOfflineQueue(next);
+    if (queueKey) localStorage.setItem(queueKey, JSON.stringify(next));
+  };
+  const enqueueOffline = (payload: any) => {
+    const next = [
+      ...offlineQueue,
+      {
+        id: payload.client_request_id,
+        payload,
+        queued_at: new Date().toISOString(),
+        attempts: 0,
+      },
+    ];
+    saveQueue(next);
+  };
+  const flushOfflineQueue = async () => {
+    if (!online || !session || !offlineQueue.length) return;
+    const remaining: any[] = [];
+    for (const item of offlineQueue) {
+      const { error } = await supabase
+        .from("production_data")
+        .insert(item.payload);
+      if (error && error.code !== "23505")
+        remaining.push({
+          ...item,
+          attempts: numberValue(item.attempts) + 1,
+          last_error: error.message,
+        });
+    }
+    saveQueue(remaining);
+    if (remaining.length !== offlineQueue.length)
+      setProductionRefresh((value) => value + 1);
+  };
+  useEffect(() => {
+    flushOfflineQueue();
+  }, [online, session?.user?.id, offlineQueue.length]);
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    navigator.serviceWorker
+      .register("/production-sw.js")
+      .catch((error) =>
+        console.warn(
+          bi("Service Worker tidak aktif:", "Service Worker 未启用："),
+          error,
+        ),
+      );
+  }, []);
+  const handleLogin = async (event: any) => {
+    event.preventDefault();
+    setLoginError("");
+    const { error } = await supabase.auth.signInWithPassword({
+      email: emailInput,
+      password: passcode,
+    });
+    if (error) {
+      setLoginError(errorText(error, bi("Login gagal.", "登录失败。")));
+      setPasscode("");
+    }
+  };
+  const handleLogout = async () => {
+    if (session?.user?.id) {
+      const { error } = await supabase.from("app_login_events").insert({
+        user_id: session.user.id,
+        user_email: session.user.email,
+        event_type: "SIGNED_OUT",
+        user_agent: navigator.userAgent,
+      });
+      if (error)
+        console.warn(
+          bi("Event logout tidak dapat dicatat:", "无法记录退出事件："),
+          error,
+        );
+    }
+    setRecords([]);
+    setProfile(null);
+    setOfflineQueue([]);
+    setPasswordRecoveryMode(false);
+    setMfaRequired(false);
+    await supabase.auth.signOut();
+  };
+  const duplicateExists = async (payload: any) => {
+    if (!setting("enable_duplicate_check", true)) return false;
+    const minutes = Math.max(
+      numberValue(setting("duplicate_window_minutes", 5)),
+      1,
+    );
+    const threshold = new Date(Date.now() - minutes * 60_000).toISOString();
+    const { data } = await supabase
+      .from("production_data")
+      .select("id,created_at,created_by")
+      .eq("date", payload.date)
+      .eq("shift", payload.shift)
+      .eq("product", payload.product)
+      .eq("quantity", payload.quantity)
+      .is("deleted_at", null)
+      .gte("created_at", threshold)
+      .limit(1);
+    return Boolean(data?.length);
+  };
+  const buildProductionPayload = () => ({
+    date: form.date,
+    time: new Date().toLocaleTimeString(appLocale(), {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Asia/Jakarta",
+    }),
+    color: upperText(form.color),
+    shift: form.shift,
+    product: upperText(form.product),
+    quantity: Math.floor(numberValue(form.quantity)),
+    note: upperText(form.note),
+    created_by: currentUserName(session, profile),
+    client_request_id: makeUuid(),
+    work_order_id: advanced.work_order_id || null,
+    batch_id: advanced.batch_id || null,
+    machine_code: upperText(advanced.machine_code) || null,
+    line_code: upperText(advanced.line_code) || null,
+    source: advanced.source || "MANUAL",
+    metadata: {
+      language,
+      user_id: session?.user?.id,
+    },
+  });
+  const handleSubmit = async (keepContext = false) => {
+    if (submitting) return;
+    if (!canWriteProduction)
+      return alert(
+        bi(
+          "Role Anda tidak memiliki izin input produksi.",
+          "您的角色无权录入生产数据。",
+        ),
+      );
+    if (!form.date || !form.product.trim() || numberValue(form.quantity) <= 0)
+      return alert(t.incomplete);
+    const payload = buildProductionPayload();
+    setSubmitting(true);
+    try {
+      if (!online) {
+        enqueueOffline(payload);
+        alert(
+          bi(
+            "Perangkat offline. Data masuk antrean dan akan dikirim otomatis setelah terhubung.",
+            "设备离线。数据已进入队列，联网后将自动发送。",
+          ),
+        );
+      } else {
+        if (await duplicateExists(payload)) {
+          const proceed = window.confirm(
+            bi(
+              "Ditemukan data sangat mirip dalam beberapa menit terakhir. Tetap simpan?",
+              "最近几分钟内发现高度相似的数据，仍要保存吗？",
+            ),
+          );
+          if (!proceed) return;
+        }
+        const { error } = await supabase
+          .from("production_data")
+          .insert(payload);
+        if (error) throw error;
+      }
+      localStorage.setItem(
+        `last_production_entry:${session.user.id}`,
+        JSON.stringify({
+          form,
+          advanced,
+        }),
+      );
+      setForm((previous) =>
+        keepContext
+          ? {
+              ...previous,
+              quantity: "",
+              note: "",
+            }
+          : {
+              ...previous,
+              color: "",
+              product: "",
+              quantity: "",
+              note: "",
+            },
+      );
+      if (!keepContext) setAdvanced(DEFAULT_ADVANCED_FIELDS);
+      setProductionRefresh((value) => value + 1);
+    } catch (error) {
+      const message = errorText(error);
+      if (!navigator.onLine || /network|fetch/i.test(message)) {
+        enqueueOffline(payload);
+        alert(
+          bi(
+            "Koneksi gagal. Data diamankan ke antrean offline.",
+            "连接失败。数据已安全保存到离线队列。",
+          ),
+        );
+      } else alert(message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  const repeatLastEntry = () => {
+    const last = safeJson(
+      localStorage.getItem(`last_production_entry:${session?.user?.id}`),
+      null,
+    );
+    if (!last?.form)
+      return alert(bi("Belum ada entri terakhir.", "暂无上一条记录。"));
+    setForm({
+      ...last.form,
+      date: jakartaDateKey(),
+      quantity: "",
+      note: "",
+    });
+    setAdvanced({
+      ...DEFAULT_ADVANCED_FIELDS,
+      ...(last.advanced || {}),
+    });
+  };
+  const clearDraft = () => {
+    setForm({
+      date: jakartaDateKey(),
+      color: "",
+      shift: "Siang",
+      product: "",
+      quantity: "",
+      note: "",
+    });
+    setAdvanced(DEFAULT_ADVANCED_FIELDS);
+    if (draftKey) localStorage.removeItem(draftKey);
+  };
+  const handleUpdateNote = async (record: any) => {
+    if (!canEditNote || noteUpdateInFlightRef.current.has(record.id)) return;
+    if (noteEditCancelledRef.current.has(record.id)) {
+      noteEditCancelledRef.current.delete(record.id);
+      setEditingId(null);
+      setTempNote(record.note || "");
+      return;
+    }
+    const nextNote = upperText(tempNote);
+    if (nextNote === upperText(record.note)) {
+      setEditingId(null);
+      return;
+    }
+    let reason = bi("DIRECT UPDATE", "直接更新");
+    if (setting("enforce_change_approval", true) && !isManagerRole(role)) {
+      const response = window.prompt(
+        bi("Alasan perubahan catatan:", "修改备注的原因："),
+        bi("KOREKSI CATATAN", "更正备注"),
+      );
+      if (response === null) {
+        setEditingId(null);
+        setTempNote(record.note || "");
+        return;
+      }
+      if (!response.trim())
+        return alert(bi("Alasan wajib diisi.", "必须填写原因。"));
+      reason = response.trim();
+    }
+    noteUpdateInFlightRef.current.add(record.id);
+    try {
+      const { data, error } = await supabase.rpc(
+        "request_production_note_change",
+        {
+          p_production_id: Number(record.id),
+          p_expected_version: Number(record.version || 1),
+          p_new_note: nextNote,
+          p_reason: reason,
+        },
+      );
+      if (error) throw error;
+      const result = Array.isArray(data) ? data[0] : data;
+      if (result?.status === "PENDING")
+        alert(
+          bi(
+            "Permintaan perubahan dikirim untuk persetujuan supervisor.",
+            "变更申请已提交主管审批。",
+          ),
+        );
+      else setProductionRefresh((value) => value + 1);
+      setEditingId(null);
+    } catch (error) {
+      alert(errorText(error));
+    } finally {
+      noteUpdateInFlightRef.current.delete(record.id);
+    }
+  };
+  const handleDelete = async (record: any) => {
+    if (!canDeleteProduction || deletingIds.has(String(record.id))) return;
+    const reason = window.prompt(
+      bi(
+        `Alasan menghapus ${record.product} - ${record.quantity} ${unitLabel("id")}:`,
+        `删除 ${record.product} - ${record.quantity} ${unitLabel("cn")} 的原因：`,
+      ),
+      bi("SALAH INPUT", "录入错误"),
+    );
+    if (reason === null || !reason.trim()) return;
+    setDeletingIds((previous) => new Set([...previous, String(record.id)]));
+    try {
+      const { data, error } = await supabase.rpc("request_production_delete", {
+        p_production_id: Number(record.id),
+        p_expected_version: Number(record.version || 1),
+        p_reason: reason.trim(),
+      });
+      if (error) throw error;
+      const result = Array.isArray(data) ? data[0] : data;
+      if (result?.status === "PENDING")
+        alert(
+          bi(
+            "Permintaan penghapusan dikirim untuk persetujuan supervisor.",
+            "删除申请已提交主管审批。",
+          ),
+        );
+      setProductionRefresh((value) => value + 1);
+    } catch (error) {
+      alert(errorText(error));
+    } finally {
+      setDeletingIds((previous) => {
+        const next = new Set(previous);
+        next.delete(String(record.id));
+        return next;
+      });
+    }
+  };
+  const toggleFavorite = async (product: string) => {
+    if (!product || !session) return;
+    const existing = favorites.find((item) => item.item_value === product);
+    if (existing)
+      await supabase.from("user_favorites").delete().eq("id", existing.id);
+    else
+      await supabase.from("user_favorites").insert({
+        user_id: session.user.id,
+        item_type: "PRODUCT",
+        item_value: product,
+      });
+    await loadSupportingData();
+  };
+  const saveProductionPreset = async () => {
+    if (!session?.user?.id) return;
+    const name = window.prompt(
+      bi("Nama preset produksi:", "生产预设名称："),
+      form.product
+        ? `${upperText(form.product)} ${form.shift}`
+        : bi("PRESET BARU", "新预设"),
+    );
+    if (!name?.trim()) return;
+    const preset = {
+      name: name.trim().slice(0, 80),
+      form: {
+        color: upperText(form.color),
+        shift: form.shift,
+        product: upperText(form.product),
+        note: upperText(form.note),
+      },
+      advanced: {
+        ...advanced,
+      },
+    };
+    const { error } = await supabase.from("user_favorites").insert({
+      user_id: session.user.id,
+      item_type: "PRODUCTION_PRESET",
+      item_value: JSON.stringify(preset),
+    });
+    if (error) return alert(errorText(error));
+    await loadSupportingData();
+  };
+  const applyProductionPreset = (item: any) => {
+    const preset = safeJson(item?.item_value, null);
+    if (!preset?.form) return alert(bi("Preset tidak valid.", "预设无效。"));
+    setForm((previous) => ({
+      ...previous,
+      ...preset.form,
+      date: previous.date || jakartaDateKey(),
+      quantity: "",
+    }));
+    setAdvanced({
+      ...DEFAULT_ADVANCED_FIELDS,
+      ...(preset.advanced || {}),
+    });
+  };
+  const removeProductionPreset = async (id: any) => {
+    if (!window.confirm(bi("Hapus preset ini?", "删除此预设吗？"))) return;
+    const { error } = await supabase
+      .from("user_favorites")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", session.user.id);
+    if (error) return alert(errorText(error));
+    await loadSupportingData();
+  };
+  const applyScannedValue = (raw: string) => {
+    const value = raw.trim();
+    if (value.toUpperCase().startsWith("WO:")) {
+      const code = value.slice(3).trim().toUpperCase();
+      const order = workOrders.find((item) => upperText(item.code) === code);
+      if (!order)
+        return alert(
+          bi(
+            `Work Order ${code} tidak ditemukan atau tidak aktif.`,
+            `工单 ${code} 不存在或未启用。`,
+          ),
+        );
+      setAdvanced({
+        work_order_id: order.id,
+        batch_id: "",
+        machine_code: order.machine_code || "",
+        line_code: order.line_code || "",
+        source: "BARCODE",
+      });
+      setForm((previous) => ({
+        ...previous,
+        product: order.product || previous.product,
+        color: order.color || previous.color,
+      }));
+      return;
+    }
+    if (value.toUpperCase().startsWith("BATCH:")) {
+      const code = value.slice(6).trim().toUpperCase();
+      const batch = batches.find((item) => upperText(item.batch_code) === code);
+      if (!batch)
+        return alert(
+          bi(
+            `Batch ${code} tidak ditemukan atau tidak aktif.`,
+            `批次 ${code} 不存在或未启用。`,
+          ),
+        );
+      setAdvanced((previous) => ({
+        ...previous,
+        batch_id: batch.id,
+        work_order_id: batch.work_order_id || previous.work_order_id,
+        source: "BARCODE",
+      }));
+      setForm((previous) => ({
+        ...previous,
+        product: batch.product || previous.product,
+        color: batch.color || previous.color,
+      }));
+      return;
+    }
+    setForm((previous) => ({
+      ...previous,
+      product: upperText(value),
+    }));
+    setAdvanced((previous) => ({
+      ...previous,
+      source: "BARCODE",
+    }));
+  };
+  const getFilteredRecords = () =>
+    records.filter((row) => {
+      const matchDate = filterDate ? row.date === filterDate : true;
+      const matchShift =
+        filterShift === "Semua" ? true : row.shift === filterShift;
+      const search = searchQuery.toUpperCase();
+      const matchSearch =
+        !search ||
+        [
+          row.product,
+          row.color,
+          row.note,
+          row.created_by,
+          row.machine_code,
+          row.line_code,
+        ].some((value) => upperText(value).includes(search));
+      return matchDate && matchShift && matchSearch;
+    });
+  const handleExport = () => {
+    if (role === "viewer" && setting("restrict_viewer_export", true))
+      return alert(
+        bi("Export dibatasi untuk role Viewer.", "只读用户无权导出。"),
+      );
+    const rows = getFilteredRecords();
+    if (!rows.length) return alert(t.noData);
+    const total = rows.reduce((sum, row) => sum + numberValue(row.quantity), 0);
+    const workOrderHeader = bi("Work Order", "工单");
+    const batchHeader = bi("Batch", "批次");
+    const machineHeader = bi("Mesin", "机器");
+    const lineHeader = bi("Line", "产线");
+    const data: Record<string, any>[] = rows.map((row) => ({
+      [t.date]: row.date,
+      [t.time]: row.time,
+      [t.shift]: shiftLabel(row.shift),
+      [t.product]: row.product,
+      [t.color]: row.color,
+      [t.qty]: row.quantity,
+      [t.note]: row.note,
+      [t.user]: row.created_by,
+      [workOrderHeader]: row.work_order_id || "",
+      [batchHeader]: row.batch_id || "",
+      [machineHeader]: row.machine_code || "",
+      [lineHeader]: row.line_code || "",
+    }));
+    data.push({
+      [t.product]: bi("TOTAL", "合计"),
+      [t.qty]: total,
+    });
+    const sheet = XLSX.utils.json_to_sheet(data);
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, bi("Produksi", "生产"));
+    XLSX.writeFile(
+      book,
+      `${bi("Laporan_Produksi", "生产报告")}_${filterDate || jakartaDateKey()}.xlsx`,
+    );
+  };
+  const productOptions = masterItems.filter(
+    (item) => item.category === "PRODUCT",
+  );
+  const colorOptions = masterItems.filter((item) => item.category === "COLOR");
+  const machineOptions = masterItems.filter(
+    (item) => item.category === "MACHINE",
+  );
+  const lineOptions = masterItems.filter((item) => item.category === "LINE");
+  const filteredRecords = getFilteredRecords();
+  const totalFiltered = filteredRecords.reduce(
+    (sum, item) => sum + numberValue(item.quantity),
+    0,
+  );
+  const allColumnOptions = [
+    ["date", t.date],
+    ["time", t.time],
+    ["shift", t.shift],
+    ["product", t.product],
+    ["qty", t.qty],
+    ["note", t.note],
+    ["user", t.user],
+    ["work_order", bi("Work Order", "工单")],
+    ["batch", bi("Batch", "批次")],
+    ["machine", bi("Mesin", "机器")],
+    ["line", bi("Line", "产线")],
+    ["actions", bi("Aksi", "操作")],
+  ];
+  const hasColumn = (key: string) => visibleColumns.includes(key);
+  const clearAuthQuery = () => {
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.search = "";
+    cleanUrl.hash = "";
+    window.history.replaceState({}, "", cleanUrl.toString());
+    setInviteToken("");
+  };
+  if (authLoading)
+    return (
+      <div className="h-screen flex items-center justify-center font-black text-blue-600 bg-slate-50">
+        {bi("MENYINKRONKAN... ", "正在同步... ")}
+      </div>
+    );
+  if (!session && inviteToken)
+    return (
+      <InvitationSignupScreen token={inviteToken} onCancel={clearAuthQuery} />
+    );
+  if (session && passwordRecoveryMode)
+    return (
+      <PasswordRecoveryScreen
+        onComplete={() => setPasswordRecoveryMode(false)}
+        onLogout={handleLogout}
+      />
+    );
+  if (session && mfaRequired)
+    return (
+      <MfaChallengeScreen
+        session={session}
+        onVerified={() => setMfaRequired(false)}
+        onLogout={handleLogout}
+      />
+    );
+  if (!session)
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-slate-950 relative overflow-hidden p-4">
+        <div className="absolute top-[-20%] left-[-10%] w-[55%] h-[55%] bg-blue-600/20 rounded-full blur-[130px]" />
+        <div className="absolute bottom-[-20%] right-[-10%] w-[55%] h-[55%] bg-violet-600/20 rounded-full blur-[130px]" />
+        <div className="w-full max-w-md relative z-10">
+          <div className="bg-white/10 backdrop-blur-2xl border border-white/20 rounded-[36px] p-7 md:p-10 shadow-2xl">
+            <div className="text-center mb-8">
+              <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-700 rounded-3xl flex items-center justify-center shadow-2xl mx-auto mb-6">
+                <span className="text-white font-black text-4xl italic">B</span>
+              </div>
+              <h1 className="text-2xl font-black text-white tracking-tighter uppercase">
+                {t.title}
+              </h1>
+              <p className="text-[10px] font-bold text-blue-300 tracking-[0.3em] uppercase mt-2">
+                {bi("Private Production Cloud ", "私有生产云 ")}
+              </p>
+            </div>
+            <form onSubmit={handleLogin} className="space-y-4">
+              <FullSuiteInput
+                label={
+                  <span className="text-blue-200">
+                    {bi("Email Terdaftar", "注册邮箱")}
+                  </span>
+                }
+              >
+                <input
+                  type="email"
+                  required
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  placeholder="name@buymore.com"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm outline-none focus:bg-white/10 focus:border-blue-500/50 placeholder:text-white/20"
+                />
+              </FullSuiteInput>
+              <FullSuiteInput
+                label={
+                  <span className="text-blue-200">
+                    {bi("Password Keamanan", "安全密码")}
+                  </span>
+                }
+              >
+                <input
+                  type="password"
+                  required
+                  value={passcode}
+                  onChange={(e) => setPasscode(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-sm outline-none focus:bg-white/10 focus:border-blue-500/50 placeholder:text-white/20 text-center tracking-[0.3em]"
+                />
+              </FullSuiteInput>
+              {loginError && (
+                <p className="text-center text-red-400 text-[10px] font-black">
+                  {loginError}
+                </p>
+              )}
+              <Button type="submit" className="w-full py-4 tracking-widest">
+                {t.enter}
+              </Button>
+            </form>
+            <div className="mt-8 flex justify-center gap-4 border-t border-white/10 pt-6">
+              <button
+                onClick={() => setLanguage("id")}
+                className="text-[10px] font-black text-white/50 hover:text-white"
+              >
+                {bi("BAHASA INDONESIA ", "印度尼西亚语 ")}
+              </button>
+              <button
+                onClick={() => setLanguage("cn")}
+                className="text-[10px] font-black text-white/50 hover:text-white"
+              >
+                {bi("中文 ", "中文 ")}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  return (
+    <AppErrorBoundary>
+      <div
+        className={`min-h-screen pb-12 font-sans text-slate-800 antialiased relative ${darkMode ? "full-suite-dark bg-slate-950" : "bg-[#E3E1E1]"}`}
+      >
+        <style>{`
+          .full-suite-dark { color: #e2e8f0; }
+          .full-suite-dark .bg-white { background-color: #0f172a !important; }
+          .full-suite-dark .bg-slate-50, .full-suite-dark .bg-slate-50\/40, .full-suite-dark .bg-slate-50\/50, .full-suite-dark .bg-slate-50\/60 { background-color: #111c31 !important; }
+          .full-suite-dark .text-slate-900, .full-suite-dark .text-slate-800, .full-suite-dark .text-slate-700, .full-suite-dark .text-slate-600 { color: #e2e8f0 !important; }
+          .full-suite-dark .text-slate-500, .full-suite-dark .text-slate-400 { color: #94a3b8 !important; }
+          .full-suite-dark .border-slate-100, .full-suite-dark .border-slate-200 { border-color: #334155 !important; }
+          .full-suite-dark input, .full-suite-dark select, .full-suite-dark textarea { color: #e2e8f0; background-color: #111c31 !important; border-color: #334155 !important; }
+          .full-suite-dark table tr:hover { background-color: #17233a !important; }
+          @media print { .full-suite-app-header, .full-suite-statusbar { display: none !important; } }
+        `}</style>
+
+        <div className="full-suite-app-header sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b border-slate-100 shadow-sm">
+          <div className="max-w-[1500px] mx-auto px-4 md:px-6 py-4 xl:h-20 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+            <div className="flex items-center justify-between gap-4 w-full xl:w-auto">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-11 h-11 bg-slate-950 rounded-2xl flex items-center justify-center shadow-xl shrink-0">
+                  <span className="text-white font-black text-2xl italic">
+                    B
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-sm md:text-lg font-black text-slate-900 truncate uppercase">
+                    {t.title}
+                  </h1>
+                  <div className="flex items-center gap-2">
+                    <p className="text-[9px] font-bold text-blue-500 uppercase truncate">
+                      {currentUserName(session, profile)}
+                    </p>
+                    <FullSuiteBadge
+                      tone={
+                        role === "admin"
+                          ? "red"
+                          : role === "supervisor"
+                            ? "violet"
+                            : role === "qc"
+                              ? "green"
+                              : "blue"
+                      }
+                    >
+                      {roleLabel(role)}
+                    </FullSuiteBadge>
+                  </div>
+                </div>
+              </div>
+              <div className="flex xl:hidden items-center gap-1.5">
+                <button
+                  onClick={() => setDarkMode((value) => !value)}
+                  className="w-10 h-10 rounded-xl bg-slate-100"
+                  title={bi("Mode tampilan", "显示模式")}
+                >
+                  {darkMode ? "☀️" : "🌙"}
+                </button>
+                <select
+                  value={language}
+                  onChange={(event) =>
+                    setLanguage(normalizeLanguage(event.target.value))
+                  }
+                  className="h-10 bg-slate-100 border border-slate-200 rounded-xl px-2 text-[10px] font-black"
+                >
+                  <option value="id">{bi("ID", "ID")}</option>
+                  <option value="cn">CN</option>
+                </select>
+                <button
+                  onClick={handleLogout}
+                  className="w-10 h-10 rounded-xl bg-red-50 text-red-600 text-sm font-black"
+                  title={t.logout}
+                >
+                  ↪
+                </button>
+              </div>
+            </div>
+
+            <div className="flex bg-slate-100 p-1 rounded-xl text-[10px] md:text-xs font-black w-full xl:w-auto overflow-x-auto">
+              {[
+                ["production", t.navProd],
+                ["analytics", t.navAnalytics],
+                ["operations", t.navOps],
+                ["logs", t.navLogs],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setActiveTab(key)}
+                  className={`flex-1 shrink-0 px-4 py-2.5 rounded-lg transition-all ${activeTab === key ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="hidden xl:flex items-center gap-3">
+              <PresenceIndicator session={session} />
+              <button
+                onClick={() => setDarkMode((value) => !value)}
+                className="w-10 h-10 rounded-xl bg-slate-100"
+              >
+                {darkMode ? "☀️" : "🌙"}
+              </button>
+              <select
+                value={language}
+                onChange={(e) => setLanguage(normalizeLanguage(e.target.value))}
+                className="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-xs font-black"
+              >
+                <option value="id">🇮🇩 ID</option>
+                <option value="cn">🇨🇳 CN</option>
+              </select>
+              <button
+                onClick={handleLogout}
+                className="text-[10px] font-black text-red-500 px-3 py-2 rounded-xl hover:bg-red-50"
+              >
+                {t.logout}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="full-suite-statusbar max-w-[1500px] mx-auto px-4 md:px-6 mt-4">
+          <div
+            className={`rounded-2xl border px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[10px] font-black ${online ? "bg-emerald-50 border-emerald-100 text-emerald-700" : "bg-amber-50 border-amber-100 text-amber-700"}`}
+          >
+            <div className="flex items-center gap-2">
+              <span
+                className={`w-2 h-2 rounded-full ${online ? "bg-emerald-500" : "bg-amber-500 animate-pulse"}`}
+              />
+              {online
+                ? bi("TERHUBUNG • REALTIME AKTIF", "已连接 • 实时同步启用")
+                : bi(
+                    "OFFLINE • DATA BARU AKAN MASUK ANTREAN",
+                    "离线 • 新数据将进入队列",
+                  )}
+            </div>
+            <div className="flex items-center gap-3">
+              <span>
+                {offlineQueue.length}
+                {bi(" antrean offline", " 条离线队列")}
+              </span>
+              {online && offlineQueue.length > 0 && (
+                <button onClick={flushOfflineQueue} className="underline">
+                  {bi("Sinkronkan Sekarang ", "立即同步 ")}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <main className="max-w-[1500px] mx-auto px-4 md:px-6 mt-6 md:mt-8">
+          {activeTab === "production" && (
+            <div className="space-y-6 md:space-y-8">
+              <Card className="p-5 md:p-8 border-l-8 border-l-blue-600">
+                <FullSuiteSectionTitle
+                  title={t.add}
+                  subtitle={bi(
+                    "Draft otomatis, autocomplete master data, deteksi duplikat, barcode, work order, batch, dan antrean offline.",
+                    "自动草稿、主数据自动补全、重复检测、条码、工单、批次和离线队列。",
+                  )}
+                  action={
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={repeatLastEntry}
+                        className={SMALL_BUTTON}
+                      >
+                        {bi("Ulangi Entri Terakhir ", "重复上一条 ")}
+                      </button>
+                      <button
+                        onClick={saveProductionPreset}
+                        className={SMALL_BUTTON}
+                      >
+                        {bi("Simpan Preset ", "保存预设 ")}
+                      </button>
+                      <button
+                        onClick={() => setScannerOpen(true)}
+                        className={SMALL_BUTTON}
+                      >
+                        {bi("Scan QR/Barcode ", "扫描二维码/条码 ")}
+                      </button>
+                      <button onClick={clearDraft} className={SMALL_BUTTON}>
+                        {bi("Bersihkan Draft ", "清除草稿 ")}
+                      </button>
+                    </div>
+                  }
+                />
+                {productionPresets.length > 0 && (
+                  <div className="mb-4 flex flex-wrap items-center gap-2">
+                    <span className="text-[9px] font-black text-slate-400 uppercase">
+                      {bi("Preset: ", "预设： ")}
+                    </span>
+                    {productionPresets.map((item) => {
+                      const preset = safeJson(item.item_value, {});
+                      return (
+                        <span
+                          key={item.id}
+                          className="inline-flex items-center rounded-full bg-violet-50 border border-violet-100 overflow-hidden"
+                        >
+                          <button
+                            onClick={() => applyProductionPreset(item)}
+                            className="px-3 py-1.5 text-violet-700 text-[10px] font-black"
+                          >
+                            ⚡ {preset.name || bi("Preset", "预设")}
+                          </button>
+                          <button
+                            onClick={() => removeProductionPreset(item.id)}
+                            className="px-2 py-1.5 border-l border-violet-100 text-violet-400 hover:text-red-500 text-[10px] font-black"
+                            title={bi("Hapus preset", "删除预设")}
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+                {favorites.length > 0 && (
+                  <div className="mb-4 flex flex-wrap items-center gap-2">
+                    <span className="text-[9px] font-black text-slate-400 uppercase">
+                      {bi("Favorit: ", "收藏： ")}
+                    </span>
+                    {favorites.map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() =>
+                          setForm({
+                            ...form,
+                            product: item.item_value,
+                          })
+                        }
+                        className="px-3 py-1.5 rounded-full bg-amber-50 border border-amber-100 text-amber-700 text-[10px] font-black"
+                      >
+                        ★ {item.item_value}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4">
+                  <FullSuiteInput label={t.date}>
+                    <input
+                      type="date"
+                      value={form.date}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          date: e.target.value,
+                        })
+                      }
+                      className={INPUT_CLASS}
+                    />
+                  </FullSuiteInput>
+                  <FullSuiteInput label={t.color}>
+                    <input
+                      list="production-colors"
+                      value={form.color}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          color: e.target.value,
+                        })
+                      }
+                      className={`${INPUT_CLASS} uppercase`}
+                    />
+                    <datalist id="production-colors">
+                      {colorOptions.map((item) => (
+                        <option key={item.id} value={item.name} />
+                      ))}
+                    </datalist>
+                  </FullSuiteInput>
+                  <FullSuiteInput label={t.shift}>
+                    <select
+                      value={form.shift}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          shift: e.target.value,
+                        })
+                      }
+                      className={INPUT_CLASS}
+                    >
+                      <option value="Siang">{t.day}</option>
+                      <option value="Malam">{t.night}</option>
+                    </select>
+                  </FullSuiteInput>
+                  <FullSuiteInput label={t.product}>
+                    <div className="relative">
+                      <input
+                        list="production-products"
+                        value={form.product}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            product: e.target.value,
+                          })
+                        }
+                        className={`${INPUT_CLASS} pr-12 uppercase`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => toggleFavorite(upperText(form.product))}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-amber-500 text-lg"
+                        title={bi("Favorit", "收藏")}
+                      >
+                        ★
+                      </button>
+                    </div>
+                    <datalist id="production-products">
+                      {productOptions.map((item) => (
+                        <option key={item.id} value={item.name} />
+                      ))}
+                    </datalist>
+                  </FullSuiteInput>
+                  <FullSuiteInput label={t.qty}>
+                    <input
+                      type="number"
+                      min="1"
+                      value={form.quantity}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          quantity: e.target.value,
+                        })
+                      }
+                      className={`${INPUT_CLASS} font-black text-blue-700`}
+                    />
+                  </FullSuiteInput>
+                  <FullSuiteInput label={t.note}>
+                    <input
+                      value={form.note}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          note: e.target.value,
+                        })
+                      }
+                      className={`${INPUT_CLASS} uppercase`}
+                    />
+                  </FullSuiteInput>
+                  <div className="flex items-end">
+                    <Button
+                      disabled={submitting}
+                      onClick={() => handleSubmit(false)}
+                      className="w-full h-[48px]"
+                    >
+                      {submitting ? bi("Menyimpan...", "正在保存...") : t.save}
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-col sm:flex-row gap-2">
+                  <button
+                    onClick={() => setAdvancedOpen((value) => !value)}
+                    className={SMALL_BUTTON}
+                  >
+                    {advancedOpen
+                      ? bi("Tutup Detail Lanjutan", "收起高级详情")
+                      : bi(
+                          "Work Order, Batch, Mesin & Line",
+                          "工单、批次、机器与产线",
+                        )}
+                  </button>
+                  <button
+                    disabled={submitting}
+                    onClick={() => handleSubmit(true)}
+                    className={`${SMALL_BUTTON} !bg-emerald-600 !text-white`}
+                  >
+                    {t.saveMore}
+                  </button>
+                </div>
+                {advancedOpen && (
+                  <div className="mt-4 rounded-2xl bg-slate-50 border border-slate-100 p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                    <FullSuiteInput label={bi("Work Order", "工单")}>
+                      <select
+                        value={advanced.work_order_id}
+                        onChange={(e) => {
+                          const order = workOrders.find(
+                            (item) => item.id === e.target.value,
+                          );
+                          setAdvanced({
+                            ...advanced,
+                            work_order_id: e.target.value,
+                            batch_id: "",
+                            machine_code:
+                              order?.machine_code || advanced.machine_code,
+                            line_code: order?.line_code || advanced.line_code,
+                          });
+                          if (order)
+                            setForm({
+                              ...form,
+                              product: order.product || form.product,
+                              color: order.color || form.color,
+                            });
+                        }}
+                        className={INPUT_CLASS}
+                      >
+                        <option value="">
+                          {bi("Tanpa Work Order", "无工单")}
+                        </option>
+                        {workOrders.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.code} • {item.product}
+                          </option>
+                        ))}
+                      </select>
+                    </FullSuiteInput>
+                    <FullSuiteInput label={bi("Batch", "批次")}>
+                      <select
+                        value={advanced.batch_id}
+                        onChange={(e) => {
+                          const batch = batches.find(
+                            (item) => item.id === e.target.value,
+                          );
+                          setAdvanced({
+                            ...advanced,
+                            batch_id: e.target.value,
+                            work_order_id:
+                              batch?.work_order_id || advanced.work_order_id,
+                          });
+                          if (batch)
+                            setForm({
+                              ...form,
+                              product: batch.product || form.product,
+                              color: batch.color || form.color,
+                            });
+                        }}
+                        className={INPUT_CLASS}
+                      >
+                        <option value="">{bi("Tanpa Batch", "无批次")}</option>
+                        {batches
+                          .filter(
+                            (item) =>
+                              !advanced.work_order_id ||
+                              item.work_order_id === advanced.work_order_id,
+                          )
+                          .map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.batch_code}
+                            </option>
+                          ))}
+                      </select>
+                    </FullSuiteInput>
+                    <FullSuiteInput label={bi("Mesin", "机器")}>
+                      <input
+                        list="production-machines"
+                        value={advanced.machine_code}
+                        onChange={(e) =>
+                          setAdvanced({
+                            ...advanced,
+                            machine_code: e.target.value,
+                          })
+                        }
+                        className={INPUT_CLASS}
+                      />
+                      <datalist id="production-machines">
+                        {machineOptions.map((item) => (
+                          <option key={item.id} value={item.code} />
+                        ))}
+                      </datalist>
+                    </FullSuiteInput>
+                    <FullSuiteInput label={bi("Line", "产线")}>
+                      <input
+                        list="production-lines"
+                        value={advanced.line_code}
+                        onChange={(e) =>
+                          setAdvanced({
+                            ...advanced,
+                            line_code: e.target.value,
+                          })
+                        }
+                        className={INPUT_CLASS}
+                      />
+                      <datalist id="production-lines">
+                        {lineOptions.map((item) => (
+                          <option key={item.id} value={item.code} />
+                        ))}
+                      </datalist>
+                    </FullSuiteInput>
+                    <FullSuiteInput label={bi("Sumber", "来源")}>
+                      <select
+                        value={advanced.source}
+                        onChange={(e) =>
+                          setAdvanced({
+                            ...advanced,
+                            source: e.target.value,
+                          })
+                        }
+                        className={INPUT_CLASS}
+                      >
+                        <option value="MANUAL">{sourceLabel("MANUAL")}</option>
+                        <option value="BARCODE">
+                          {sourceLabel("BARCODE")}
+                        </option>
+                        <option value="IMPORT">{sourceLabel("IMPORT")}</option>
+                        <option value="OFFLINE_SYNC">
+                          {sourceLabel("OFFLINE_SYNC")}
+                        </option>
+                      </select>
+                    </FullSuiteInput>
+                  </div>
+                )}
+              </Card>
+
+              <Card>
+                <div className="px-5 md:px-8 py-5 border-b border-slate-100 bg-slate-50/40">
+                  <FullSuiteSectionTitle
+                    title={t.result}
+                    subtitle={bi(
+                      "Realtime INSERT/UPDATE/DELETE, detail histori, filter tersimpan, dan kolom yang dapat dipilih.",
+                      "实时处理新增/更新/删除，并提供历史详情、保存筛选器和可选列。",
+                    )}
+                    action={
+                      <div className="flex flex-wrap gap-2">
+                        <SavedFiltersControl
+                          session={session}
+                          pageKey="production"
+                          filters={{
+                            filterDate,
+                            filterShift,
+                            searchQuery,
+                            visibleColumns,
+                          }}
+                          onApply={(value: any) => {
+                            setFilterDate(value.filterDate || "");
+                            setFilterShift(value.filterShift || "Semua");
+                            setSearchQuery(value.searchQuery || "");
+                            if (Array.isArray(value.visibleColumns))
+                              setVisibleColumns(value.visibleColumns);
+                            setCurrentPage(0);
+                          }}
+                        />
+                        <button
+                          onClick={() => setShowColumns((value) => !value)}
+                          className={SMALL_BUTTON}
+                        >
+                          {bi("Kolom ", "列 ")}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setCurrentPage(0);
+                            setProductionRefresh((value) => value + 1);
+                          }}
+                          className={SMALL_BUTTON}
+                        >
+                          {bi("Muat Ulang ", "刷新 ")}
+                        </button>
+                      </div>
+                    }
+                  />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1fr_auto_auto_auto] gap-2">
+                    <input
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder={bi(
+                        "Cari produk, warna, operator, mesin...",
+                        "搜索产品、颜色、操作员、机器...",
+                      )}
+                      className={INPUT_CLASS}
+                    />
+                    <input
+                      type="date"
+                      value={filterDate}
+                      onChange={(e) => {
+                        setFilterDate(e.target.value);
+                        setCurrentPage(0);
+                      }}
+                      className={INPUT_CLASS}
+                    />
+                    <select
+                      value={filterShift}
+                      onChange={(e) => setFilterShift(e.target.value)}
+                      className={INPUT_CLASS}
+                    >
+                      <option value="Semua">{t.allShift}</option>
+                      <option value="Siang">{t.day}</option>
+                      <option value="Malam">{t.night}</option>
+                    </select>
+                    <Button
+                      onClick={handleExport}
+                      variant="success"
+                      className="text-xs"
+                    >
+                      {t.export}
+                    </Button>
+                  </div>
+                  {showColumns && (
+                    <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 flex flex-wrap gap-2">
+                      {allColumnOptions.map(([key, label]) => (
+                        <label
+                          key={key}
+                          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 text-[10px] font-black"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={hasColumn(key)}
+                            onChange={(e) =>
+                              setVisibleColumns((previous) =>
+                                e.target.checked
+                                  ? [...new Set([...previous, key])]
+                                  : previous.filter((item) => item !== key),
+                              )
+                            }
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[800px] text-sm text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-slate-700 font-black">
+                        {hasColumn("date") && (
+                          <th className="px-5 py-4">{t.date}</th>
+                        )}
+                        {hasColumn("time") && (
+                          <th className="px-4 py-4">{t.time}</th>
+                        )}
+                        {hasColumn("shift") && (
+                          <th className="px-4 py-4">{t.shift}</th>
+                        )}
+                        {hasColumn("product") && (
+                          <th className="px-4 py-4">{t.product}</th>
+                        )}
+                        {hasColumn("qty") && (
+                          <th className="px-4 py-4 text-right">{t.qty}</th>
+                        )}
+                        {hasColumn("note") && (
+                          <th className="px-4 py-4">{t.note}</th>
+                        )}
+                        {hasColumn("user") && (
+                          <th className="px-4 py-4">{t.user}</th>
+                        )}
+                        {hasColumn("work_order") && (
+                          <th className="px-4 py-4">{bi("WO", "工单")}</th>
+                        )}
+                        {hasColumn("batch") && (
+                          <th className="px-4 py-4">{bi("Batch", "批次")}</th>
+                        )}
+                        {hasColumn("machine") && (
+                          <th className="px-4 py-4">{bi("Mesin", "机器")}</th>
+                        )}
+                        {hasColumn("line") && (
+                          <th className="px-4 py-4">{bi("Line", "产线")}</th>
+                        )}
+                        {hasColumn("actions") && (
+                          <th className="px-4 py-4"></th>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {loading && !records.length ? (
+                        <tr>
+                          <td
+                            colSpan={visibleColumns.length}
+                            className="px-5 py-24 text-center font-bold animate-pulse"
+                          >
+                            {t.loading}
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredRecords.map((row, index) => (
+                          <tr
+                            key={row.id}
+                            className={`${index % 2 ? "bg-slate-50/60" : "bg-white"} hover:bg-blue-50/70 group`}
+                          >
+                            {hasColumn("date") && (
+                              <td className="px-5 py-4 font-bold whitespace-nowrap">
+                                {row.date}
+                              </td>
+                            )}
+                            {hasColumn("time") && (
+                              <td className="px-4 py-4 font-bold whitespace-nowrap">
+                                {row.time}
+                              </td>
+                            )}
+                            {hasColumn("shift") && (
+                              <td className="px-4 py-4">
+                                <FullSuiteBadge
+                                  tone={
+                                    row.shift === "Siang" ? "amber" : "slate"
+                                  }
+                                >
+                                  {row.shift === "Siang" ? t.day : t.night}
+                                </FullSuiteBadge>
+                              </td>
+                            )}
+                            {hasColumn("product") && (
+                              <td className="px-4 py-4">
+                                <p className="font-black uppercase">
+                                  {row.product}
+                                </p>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase">
+                                  {row.color}
+                                </p>
+                              </td>
+                            )}
+                            {hasColumn("qty") && (
+                              <td className="px-4 py-4 text-right font-black text-blue-700">
+                                {numberValue(row.quantity).toLocaleString(
+                                  appLocale(),
+                                )}
+                              </td>
+                            )}
+                            {hasColumn("note") && (
+                              <td className="px-4 py-4 min-w-[180px]">
+                                {editingId === row.id ? (
+                                  <input
+                                    autoFocus
+                                    value={tempNote}
+                                    onChange={(e) =>
+                                      setTempNote(e.target.value)
+                                    }
+                                    onBlur={() => handleUpdateNote(row)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        void handleUpdateNote(row);
+                                      }
+                                      if (e.key === "Escape") {
+                                        e.preventDefault();
+                                        noteEditCancelledRef.current.add(
+                                          row.id,
+                                        );
+                                        setTempNote(row.note || "");
+                                        setEditingId(null);
+                                      }
+                                    }}
+                                    className={INPUT_CLASS}
+                                  />
+                                ) : (
+                                  <button
+                                    disabled={!canEditNote}
+                                    onClick={() => {
+                                      noteEditCancelledRef.current.delete(
+                                        row.id,
+                                      );
+                                      setEditingId(row.id);
+                                      setTempNote(row.note || "");
+                                    }}
+                                    className="text-left text-xs font-bold uppercase disabled:cursor-default"
+                                  >
+                                    {row.note || "-"}{" "}
+                                    {canEditNote && (
+                                      <span className="text-blue-400">✎</span>
+                                    )}
+                                  </button>
+                                )}
+                              </td>
+                            )}
+                            {hasColumn("user") && (
+                              <td className="px-4 py-4 text-xs font-bold max-w-[150px] truncate">
+                                {row.created_by || "-"}
+                              </td>
+                            )}
+                            {hasColumn("work_order") && (
+                              <td className="px-4 py-4 text-xs font-bold">
+                                {workOrders.find(
+                                  (item) => item.id === row.work_order_id,
+                                )?.code ||
+                                  row.work_order_id ||
+                                  "-"}
+                              </td>
+                            )}
+                            {hasColumn("batch") && (
+                              <td className="px-4 py-4 text-xs font-bold">
+                                {batches.find(
+                                  (item) => item.id === row.batch_id,
+                                )?.batch_code ||
+                                  row.batch_id ||
+                                  "-"}
+                              </td>
+                            )}
+                            {hasColumn("machine") && (
+                              <td className="px-4 py-4 text-xs font-bold">
+                                {row.machine_code || "-"}
+                              </td>
+                            )}
+                            {hasColumn("line") && (
+                              <td className="px-4 py-4 text-xs font-bold">
+                                {row.line_code || "-"}
+                              </td>
+                            )}
+                            {hasColumn("actions") && (
+                              <td className="px-4 py-4 text-right whitespace-nowrap">
+                                <button
+                                  onClick={() => setDetailRecord(row)}
+                                  className={SMALL_BUTTON}
+                                >
+                                  {bi("Detail ", "详情 ")}
+                                </button>
+                                {canDeleteProduction && (
+                                  <button
+                                    disabled={deletingIds.has(String(row.id))}
+                                    onClick={() => handleDelete(row)}
+                                    className={`${SMALL_BUTTON} ml-2 !text-red-600`}
+                                  >
+                                    {deletingIds.has(String(row.id))
+                                      ? "..."
+                                      : t.delete}
+                                  </button>
+                                )}
+                              </td>
+                            )}
+                          </tr>
+                        ))
+                      )}
+                      {!loading && !filteredRecords.length && (
+                        <tr>
+                          <td
+                            colSpan={visibleColumns.length}
+                            className="px-5 py-16 text-center text-xs font-bold text-slate-400"
+                          >
+                            {t.empty}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="px-5 md:px-8 py-4 bg-slate-50/50 border-t border-slate-100 flex flex-col lg:flex-row justify-between items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <button
+                      disabled={currentPage === 0 || loading}
+                      onClick={() => setCurrentPage((value) => value - 1)}
+                      className={SMALL_BUTTON}
+                    >
+                      ←
+                    </button>
+                    <span className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center text-xs font-black">
+                      {currentPage + 1}
+                    </span>
+                    <button
+                      disabled={
+                        records.length < displayLimit ||
+                        loading ||
+                        Boolean(filterDate)
+                      }
+                      onClick={() => setCurrentPage((value) => value + 1)}
+                      className={SMALL_BUTTON}
+                    >
+                      →
+                    </button>
+                  </div>
+                  <div className="rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 px-5 py-3">
+                    <span className="text-[10px] font-black text-indigo-700 mr-3">
+                      {t.total}
+                    </span>
+                    <span className="text-lg font-black text-blue-800">
+                      {totalFiltered.toLocaleString(appLocale())}
+                      {unitLabel()}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black text-slate-500">
+                      {t.show}
+                    </span>
+                    <select
+                      value={displayLimit}
+                      onChange={(e) => {
+                        setDisplayLimit(Number(e.target.value));
+                        setCurrentPage(0);
+                      }}
+                      className={SMALL_BUTTON}
+                    >
+                      {[50, 100, 200, 300].map((item) => (
+                        <option key={item}>{item}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </Card>
+            </div>
+          )}
+
+          {activeTab === "analytics" && (
+            <AnalyticsPage session={session} language={language} />
+          )}
+          {activeTab === "operations" && (
+            <OperationsSuitePage session={session} profile={profile} />
+          )}
+          {activeTab === "logs" && (
+            <Card>
+              <div className="px-5 md:px-8 py-5 border-b border-slate-100 bg-slate-50/40">
+                <FullSuiteSectionTitle
+                  title={t.navLogs}
+                  subtitle={bi(
+                    "Append-only Audit Log dari trigger database; pagination memakai snapshot agar stabil saat log baru masuk.",
+                    "仅追加审计日志由数据库触发器生成；分页使用快照，以便新增日志时保持稳定。",
+                  )}
+                  action={
+                    <div className="flex flex-wrap gap-2">
+                      <input
+                        value={logSearch}
+                        onChange={(e) => {
+                          setLogSearch(e.target.value);
+                          setLogsPage(0);
+                          setLogsSnapshotId(null);
+                        }}
+                        placeholder={bi("Cari deskripsi...", "搜索说明...")}
+                        className={INPUT_CLASS}
+                      />
+                      <button
+                        onClick={() => {
+                          setLogsPage(0);
+                          setLogsSnapshotId(null);
+                          void fetchLogs(true, 0);
+                        }}
+                        className={SMALL_BUTTON}
+                      >
+                        {bi("Snapshot Baru ", "新快照 ")}
+                      </button>
+                    </div>
+                  }
+                />
+              </div>
+              <div className="md:hidden divide-y divide-slate-100 px-5">
+                {logs.map((log) => (
+                  <div key={log.id} className="py-4">
+                    <div className="flex justify-between gap-3">
+                      <span className="font-black text-xs">
+                        {log.user_name}
+                      </span>
+                      <span className="text-[9px] font-bold text-slate-400">
+                        {formatDateTime(log.created_at)}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex gap-2 items-start">
+                      <FullSuiteBadge
+                        tone={
+                          log.activity_type === "DELETE"
+                            ? "red"
+                            : log.activity_type === "INSERT"
+                              ? "green"
+                              : "blue"
+                        }
+                      >
+                        {activityLabel(
+                          log.metadata?.event_subtype || log.activity_type,
+                        )}
+                      </FullSuiteBadge>
+                      <p className="text-xs font-bold text-slate-600 leading-relaxed">
+                        {auditDescription(log)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                {!logsLoading && !logs.length && (
+                  <p className="py-12 text-center text-xs font-bold text-slate-400">
+                    {t.logEmpty}
+                  </p>
+                )}
+              </div>
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full min-w-[900px] text-sm">
+                  <thead>
+                    <tr className="border-b text-left">
+                      <th className="px-7 py-5">{t.logTime}</th>
+                      <th className="px-5 py-5">{t.user}</th>
+                      <th className="px-5 py-5">{t.logAction}</th>
+                      <th className="px-5 py-5">
+                        {bi("Tabel / ID", "表 / ID")}
+                      </th>
+                      <th className="px-5 py-5">{t.logDesc}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {logsLoading && !logs.length ? (
+                      <tr>
+                        <td
+                          colSpan={5}
+                          className="p-20 text-center font-bold animate-pulse"
+                        >
+                          {t.loading}
+                        </td>
+                      </tr>
+                    ) : (
+                      logs.map((log, index) => (
+                        <tr
+                          key={log.id}
+                          className={index % 2 ? "bg-slate-50/60" : "bg-white"}
+                        >
+                          <td className="px-7 py-4 text-xs font-bold text-slate-500 whitespace-nowrap">
+                            {formatDateTime(log.created_at)}
+                          </td>
+                          <td className="px-5 py-4 font-bold">
+                            {log.user_name}
+                          </td>
+                          <td className="px-5 py-4">
+                            <FullSuiteBadge
+                              tone={
+                                log.activity_type === "DELETE"
+                                  ? "red"
+                                  : log.activity_type === "INSERT"
+                                    ? "green"
+                                    : "blue"
+                              }
+                            >
+                              {activityLabel(
+                                log.metadata?.event_subtype ||
+                                  log.activity_type,
+                              )}
+                            </FullSuiteBadge>
+                          </td>
+                          <td className="px-5 py-4 text-xs font-bold">
+                            {log.table_name || "-"} #{log.record_id || "-"}
+                          </td>
+                          <td className="px-5 py-4 text-xs font-bold text-slate-600">
+                            {auditDescription(log)}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                    {!logsLoading && !logs.length && (
+                      <tr>
+                        <td
+                          colSpan={5}
+                          className="p-16 text-center text-xs font-bold text-slate-400"
+                        >
+                          {t.logEmpty}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div className="px-5 md:px-8 py-4 bg-slate-50/50 border-t flex items-center justify-between">
+                <div className="flex gap-2">
+                  <button
+                    disabled={logsPage === 0 || logsLoading}
+                    onClick={() => setLogsPage((value) => value - 1)}
+                    className={SMALL_BUTTON}
+                  >
+                    ←
+                  </button>
+                  <span className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-xs font-black">
+                    {logsPage + 1}
+                  </span>
+                  <button
+                    disabled={logs.length < logsLimit || logsLoading}
+                    onClick={() => setLogsPage((value) => value + 1)}
+                    className={SMALL_BUTTON}
+                  >
+                    →
+                  </button>
+                </div>
+                <p className="text-[9px] font-black text-slate-400 uppercase">
+                  {bi("AUDIT TRANSAKSIONAL BUYMORE ", "BUYMORE 事务审计 ")}
+                </p>
+              </div>
+            </Card>
+          )}
+        </main>
+
+        <QrBarcodeScanner
+          open={scannerOpen}
+          onClose={() => setScannerOpen(false)}
+          onDetected={applyScannedValue}
+        />
+        <RecordDetailModal
+          open={Boolean(detailRecord)}
+          record={detailRecord}
+          onClose={() => setDetailRecord(null)}
+          session={session}
+          profile={profile}
+        />
+      </div>
+    </AppErrorBoundary>
+  );
+}
+const rootElement =
+  document.getElementById("root") ||
+  (() => {
+    const element = document.createElement("div");
+    element.id = "root";
+    document.body.appendChild(element);
+    return element;
+  })();
+const root = ReactDOM.createRoot(rootElement);
 root.render(<ProductionSystem />);

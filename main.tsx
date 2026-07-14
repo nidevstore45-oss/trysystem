@@ -4,8 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 /** 1. CONFIG **/
-const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || "https://npkgrgiypzkwytmtxgpk.supabase.co";
-const SUPABASE_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wa2dyZ2l5cHprd3l0bXR4Z3BrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzMDcwMzgsImV4cCI6MjA4Nzg4MzAzOH0.C44YWp5Lclm2F4BkD1zM6W1aiX8Mgtc6Nq5eWniZDY8";
+const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || "";
+const SUPABASE_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || "";
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
     persistSession: true,

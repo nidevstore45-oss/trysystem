@@ -4,8 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 import * as XLSX from "xlsx";
 
 /** 1. CONFIG **/
-const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || "https://bliaixvdfwaxdlfhayea.supabase.co";
-const SUPABASE_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJsaWFpeHZkZndheGRsZmhheWVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwMDc5OTQsImV4cCI6MjA5OTU4Mzk5NH0.PcqkFrETAtI0JGYinhRKKcmd2qMb2wh6nNQI4sTIG_8";
+const SUPABASE_URL = (import.meta as any).env?.VITE_SUPABASE_URL || "https://npkgrgiypzkwytmtxgpk.supabase.co";
+const SUPABASE_KEY = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wa2dyZ2l5cHprd3l0bXR4Z3BrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzMDcwMzgsImV4cCI6MjA4Nzg4MzAzOH0.C44YWp5Lclm2F4BkD1zM6W1aiX8Mgtc6Nq5eWniZDY8";
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
     persistSession: true,
@@ -1192,47 +1192,6 @@ function QrBarcodeScanner({ open, onClose, onDetected }: any) {
   );
 }
 
-function NotificationBell({ session, onOpenCenter }: any) {
-  const [open, setOpen] = useState(false);
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [readIds, setReadIds] = useState<Set<string>>(new Set());
-  const load = React.useCallback(async () => {
-    if (!session?.user?.id) return;
-    const [notificationResult, readResult] = await Promise.all([
-      supabase.from("app_notifications").select("*").order("created_at", { ascending: false }).limit(30),
-      supabase.from("notification_reads").select("notification_id").eq("user_id", session.user.id)
-    ]);
-    setNotifications(notificationResult.data || []);
-    setReadIds(new Set((readResult.data || []).map((item: any) => String(item.notification_id))));
-  }, [session?.user?.id]);
-  useEffect(() => {
-    load();
-    if (!session?.user?.id) return;
-   
-    return () => { supabase.removeChannel(channel); };
-  }, [session?.user?.id, load]);
-  const markRead = async (id: any) => {
-    await supabase.from("notification_reads").upsert({ notification_id: id, user_id: session.user.id, read_at: new Date().toISOString() }, { onConflict: "notification_id,user_id" });
-    setReadIds((previous) => new Set([...Array.from(previous), String(id)]));
-  };
-  const markAllRead = async () => {
-    const rows = notifications.map((item) => ({ notification_id: item.id, user_id: session.user.id, read_at: new Date().toISOString() }));
-    if (rows.length) await supabase.from("notification_reads").upsert(rows, { onConflict: "notification_id,user_id" });
-    setReadIds(new Set(notifications.map((item) => String(item.id))));
-  };
-  const unread = notifications.filter((item) => !readIds.has(String(item.id))).length;
-  return (
-    <div className="relative">
-      <button onClick={() => setOpen((value) => !value)} className="relative w-10 h-10 rounded-xl bg-slate-100 text-lg flex items-center justify-center" aria-label="Notifikasi">🔔{unread > 0 && <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center">{Math.min(unread, 99)}</span>}</button>
-      {open && <div className="absolute right-0 top-12 w-[min(360px,calc(100vw-24px))] rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden z-[1000]">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between"><div><p className="text-xs font-black text-slate-900">Pusat Notifikasi</p><p className="text-[9px] font-bold text-slate-400">{unread} belum dibaca</p></div><button onClick={markAllRead} className="text-[9px] font-black text-blue-600">Tandai semua</button></div>
-        <div className="max-h-[420px] overflow-y-auto divide-y divide-slate-100">{notifications.slice(0, 12).map((item) => <button key={item.id} onClick={() => markRead(item.id)} className={`w-full p-4 text-left hover:bg-slate-50 ${readIds.has(String(item.id)) ? "opacity-60" : "bg-blue-50/30"}`}><div className="flex items-start gap-3"><span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${item.severity === "CRITICAL" ? "bg-red-500" : item.severity === "WARNING" ? "bg-amber-500" : item.severity === "SUCCESS" ? "bg-emerald-500" : "bg-blue-500"}`} /><div className="min-w-0"><p className="text-[11px] font-black text-slate-800">{item.title}</p><p className="mt-1 text-[10px] font-bold text-slate-500 leading-relaxed">{item.message}</p><p className="mt-2 text-[9px] font-bold text-slate-400">{formatDateTime(item.created_at)}</p></div></div></button>)}{!notifications.length && <p className="p-8 text-center text-xs font-bold text-slate-400">Belum ada notifikasi.</p>}</div>
-        <button onClick={() => { setOpen(false); onOpenCenter(); }} className="w-full px-4 py-3 border-t border-slate-100 text-[10px] font-black text-blue-600 bg-slate-50">Buka semua notifikasi</button>
-      </div>}
-    </div>
-  );
-}
-
 function MfaManagement({ session }: any) {
   const [factors, setFactors] = useState<any[]>([]);
   const [aal, setAal] = useState<any>(null);
@@ -1685,52 +1644,6 @@ function MasterDataPage({ session, profile }: any) {
   </div>;
 }
 
-function NotificationsCenterPage({ session, profile }: any) {
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [readIds, setReadIds] = useState<Set<string>>(new Set());
-  const [filter, setFilter] = useState("ALL");
-  const [form, setForm] = useState({ title: "", message: "", severity: "INFO", target_role: "" });
-  const manager = isManagerRole(profile?.role);
-  const load = async () => {
-    const [notificationResult, readResult] = await Promise.all([
-      supabase.from("app_notifications").select("*").or(`target_user_id.is.null,target_user_id.eq.${session.user.id}`).order("created_at", { ascending: false }).limit(500),
-      supabase.from("notification_reads").select("notification_id").eq("user_id", session.user.id)
-    ]);
-    if (notificationResult.error) alert(errorText(notificationResult.error));
-    setNotifications(notificationResult.data || []);
-    setReadIds(new Set((readResult.data || []).map((row: any) => String(row.notification_id))));
-  };
-  useEffect(() => {
-    load();
-    const channel = supabase.channel(`notification-center-${session.user.id}`).on("postgres_changes", { event: "INSERT", schema: "public", table: "app_notifications" }, load).subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [session.user.id]);
-  const markRead = async (id: string) => {
-    const { error } = await supabase.from("notification_reads").upsert({ notification_id: id, user_id: session.user.id, read_at: new Date().toISOString() }, { onConflict: "notification_id,user_id" });
-    if (error) return alert(errorText(error));
-    setReadIds((previous) => new Set([...previous, String(id)]));
-  };
-  const markAll = async () => {
-    const unread = notifications.filter((item) => !readIds.has(String(item.id)));
-    if (!unread.length) return;
-    const { error } = await supabase.from("notification_reads").upsert(unread.map((item) => ({ notification_id: item.id, user_id: session.user.id, read_at: new Date().toISOString() })), { onConflict: "notification_id,user_id" });
-    if (error) return alert(errorText(error));
-    setReadIds(new Set(notifications.map((item) => String(item.id))));
-  };
-  const broadcast = async () => {
-    if (!manager || !form.title.trim() || !form.message.trim()) return alert("Judul dan pesan wajib diisi.");
-    const { error } = await supabase.from("app_notifications").insert({ title: form.title.trim(), message: form.message.trim(), severity: form.severity, target_role: form.target_role || null, created_by: session.user.id, source_type: "MANUAL" });
-    if (error) return alert(errorText(error));
-    setForm({ title: "", message: "", severity: "INFO", target_role: "" });
-    await load();
-  };
-  const visible = notifications.filter((item) => filter === "ALL" || (filter === "UNREAD" ? !readIds.has(String(item.id)) : item.severity === filter));
-  return <div className="space-y-6">
-    {manager && <Card className="p-5 md:p-7"><FullSuiteSectionTitle title="Kirim Notifikasi" subtitle="Pesan dapat ditujukan ke seluruh pengguna atau satu role tertentu." /><div className="grid grid-cols-1 md:grid-cols-4 gap-3"><FullSuiteInput label="Judul"><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className={INPUT_CLASS} /></FullSuiteInput><FullSuiteInput label="Severity"><select value={form.severity} onChange={(e) => setForm({ ...form, severity: e.target.value })} className={INPUT_CLASS}>{["INFO", "SUCCESS", "WARNING", "CRITICAL"].map((item) => <option key={item}>{item}</option>)}</select></FullSuiteInput><FullSuiteInput label="Target Role"><select value={form.target_role} onChange={(e) => setForm({ ...form, target_role: e.target.value })} className={INPUT_CLASS}><option value="">Semua Role</option>{Object.entries(ROLE_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></FullSuiteInput><div className="flex items-end"><button onClick={broadcast} className="w-full px-4 py-3 rounded-xl bg-blue-600 text-white text-xs font-black">Kirim</button></div><FullSuiteInput label="Pesan" className="md:col-span-4"><textarea value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} className={`${INPUT_CLASS} min-h-24`} /></FullSuiteInput></div></Card>}
-    <Card className="p-5 md:p-7"><FullSuiteSectionTitle title="Pusat Notifikasi" subtitle="Notifikasi target, reject, approval, shift, dan sinkronisasi tersimpan hingga dibaca." action={<div className="flex flex-wrap gap-2"><select value={filter} onChange={(e) => setFilter(e.target.value)} className={SMALL_BUTTON}><option>ALL</option><option>UNREAD</option><option>INFO</option><option>SUCCESS</option><option>WARNING</option><option>CRITICAL</option></select><button onClick={markAll} className={SMALL_BUTTON}>Tandai Semua Dibaca</button><button onClick={load} className={SMALL_BUTTON}>Refresh</button></div>} /><div className="space-y-3">{visible.map((item) => { const read = readIds.has(String(item.id)); return <button key={item.id} onClick={() => markRead(item.id)} className={`w-full rounded-2xl border p-4 text-left transition-all ${read ? "border-slate-200 bg-white opacity-65" : "border-blue-200 bg-blue-50/40"}`}><div className="flex items-start gap-3"><span className={`mt-1.5 w-2.5 h-2.5 rounded-full shrink-0 ${item.severity === "CRITICAL" ? "bg-red-500" : item.severity === "WARNING" ? "bg-amber-500" : item.severity === "SUCCESS" ? "bg-emerald-500" : "bg-blue-500"}`} /><div><div className="flex flex-wrap gap-2 items-center"><p className="text-xs font-black text-slate-900">{item.title}</p><FullSuiteBadge tone={item.severity === "CRITICAL" ? "red" : item.severity === "WARNING" ? "amber" : item.severity === "SUCCESS" ? "green" : "blue"}>{item.severity}</FullSuiteBadge>{!read && <FullSuiteBadge tone="violet">BARU</FullSuiteBadge>}</div><p className="mt-2 text-xs font-bold text-slate-600 leading-relaxed">{item.message}</p><p className="mt-2 text-[9px] font-bold text-slate-400">{formatDateTime(item.created_at)} • {item.source_type || "SYSTEM"}</p></div></div></button>; })}{!visible.length && <p className="py-12 text-center text-xs font-bold text-slate-400">Tidak ada notifikasi untuk filter ini.</p>}</div></Card>
-  </div>;
-}
-
 function ScheduledReportsPage({ session, profile }: any) {
   const [schedules, setSchedules] = useState<any[]>([]);
   const [runs, setRuns] = useState<any[]>([]);
@@ -1863,7 +1776,6 @@ function OperationsOverviewPage({ onOpen, profile }: any) {
     ["shift", "Shift Closing", "Ringkasan dan serah terima dengan review supervisor.", "🕘"],
     ["approvals", "Approval & Trash", "Persetujuan perubahan, restore, dan purge terkontrol.", "🛡️"],
     ["master", "Master Data", "Standarisasi produk, warna, mesin, line, dan defect.", "🗂️"],
-    ["notifications", "Notification Center", "Peringatan operasional yang persisten dan realtime.", "🔔"],
     ["attachments", "Lampiran", "Foto reject, bukti produksi, dokumen WO, dan lainnya.", "📎"],
     ["reports", "Laporan Otomatis", "Arsip, email, webhook, Telegram, atau WhatsApp provider.", "📨"],
     ["users", "Pengguna & Keamanan", "Role, status akun, undangan, login events, dan MFA.", "👥"]
@@ -1875,7 +1787,7 @@ function OperationsSuitePage({ session, profile, initialModule = "overview" }: a
   const [module, setModule] = useState(initialModule);
   useEffect(() => setModule(initialModule), [initialModule]);
   const allModules = [
-    ["overview", "Ringkasan"], ["targets", "Target"], ["quality", "QC"], ["workorders", "WO & Batch"], ["shift", "Shift"], ["approvals", "Approval"], ["master", "Master"], ["notifications", "Notifikasi"], ["attachments", "Lampiran"], ["reports", "Laporan"], ["users", "Pengguna"]
+    ["overview", "Ringkasan"], ["targets", "Target"], ["quality", "QC"], ["workorders", "WO & Batch"], ["shift", "Shift"], ["approvals", "Approval"], ["master", "Master"], ["attachments", "Lampiran"], ["reports", "Laporan"], ["users", "Pengguna"]
   ];
   const allowed = allModules.filter(([key]) => {
     if (key === "approvals" && profile?.role === "viewer") return false;
@@ -1891,7 +1803,6 @@ function OperationsSuitePage({ session, profile, initialModule = "overview" }: a
     {module === "shift" && <ShiftClosingPage session={session} profile={profile} />}
     {module === "approvals" && <ApprovalsAndTrashPage session={session} profile={profile} />}
     {module === "master" && <MasterDataPage session={session} profile={profile} />}
-    {module === "notifications" && <NotificationsCenterPage session={session} profile={profile} />}
     {module === "attachments" && <AttachmentsLibraryPage session={session} profile={profile} />}
     {module === "reports" && <ScheduledReportsPage session={session} profile={profile} />}
     {module === "users" && <UsersAndSecurityPage session={session} profile={profile} />}
@@ -1909,7 +1820,6 @@ function ProductionSystem() {
   const [language, setLanguage] = useState(() => localStorage.getItem("app_lang") || "id");
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("buymore_dark_mode") === "true");
   const [activeTab, setActiveTab] = useState("production");
-  const [operationsInitial, setOperationsInitial] = useState("overview");
   const online = useOnlineStatus();
 
   const [records, setRecords] = useState<any[]>([]);
@@ -1927,7 +1837,6 @@ function ProductionSystem() {
   const [tempNote, setTempNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
-  const [newEntryAlert, setNewEntryAlert] = useState<string | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [detailRecord, setDetailRecord] = useState<any>(null);
   const [offlineQueue, setOfflineQueue] = useState<any[]>([]);
@@ -1952,10 +1861,10 @@ function ProductionSystem() {
 
   const text = {
     id: {
-      title: "PRODUCTION BUYMORE", add: "Input Produksi", result: "Hasil Produksi", date: "Tanggal", time: "Waktu", color: "Warna", shift: "Shift", product: "Produk", qty: "Qty", note: "Catatan", save: "Simpan Data", saveMore: "Simpan & Tambah Lagi", export: "Export Excel", delete: "Hapus", day: "Siang", night: "Malam", allShift: "Semua Shift", loading: "Sinkronisasi Cloud...", empty: "Tidak ada data.", incomplete: "Data belum lengkap.", noData: "Tidak ada data untuk kriteria ini.", notif: "Data Baru Masuk!", show: "Tampilkan", logout: "Log Out", enter: "Masuk Sistem", total: "TOTAL PRODUKSI", user: "Pengguna", navProd: "Produksi", navAnalytics: "Analisis", navOps: "Operasional", navLogs: "Log Aktivitas", logTime: "Waktu Sistem", logAction: "Tipe", logDesc: "Deskripsi", logEmpty: "Belum ada riwayat aktivitas." 
+      title: "PRODUCTION BUYMORE", add: "Input Produksi", result: "Hasil Produksi", date: "Tanggal", time: "Waktu", color: "Warna", shift: "Shift", product: "Produk", qty: "Qty", note: "Catatan", save: "Simpan Data", saveMore: "Simpan & Tambah Lagi", export: "Export Excel", delete: "Hapus", day: "Siang", night: "Malam", allShift: "Semua Shift", loading: "Sinkronisasi Cloud...", empty: "Tidak ada data.", incomplete: "Data belum lengkap.", noData: "Tidak ada data untuk kriteria ini.", show: "Tampilkan", logout: "Log Out", enter: "Masuk Sistem", total: "TOTAL PRODUKSI", user: "Pengguna", navProd: "Produksi", navAnalytics: "Analisis", navOps: "Operasional", navLogs: "Log Aktivitas", logTime: "Waktu Sistem", logAction: "Tipe", logDesc: "Deskripsi", logEmpty: "Belum ada riwayat aktivitas." 
     },
     cn: {
-      title: "BUYMORE 生产中心", add: "生产输入", result: "生产结果", date: "日期", time: "时间", color: "颜色", shift: "班次", product: "产品", qty: "数量", note: "备注", save: "保存数据", saveMore: "保存并继续", export: "导出 Excel", delete: "删除", day: "白班", night: "夜班", allShift: "所有班次", loading: "同步中...", empty: "没有数据。", incomplete: "数据不完整。", noData: "该条件没有数据。", notif: "新数据已输入!", show: "显示", logout: "登出", enter: "进入系统", total: "总生产量", user: "记录员", navProd: "生产看板", navAnalytics: "数据分析", navOps: "运营中心", navLogs: "操作日志", logTime: "系统时间", logAction: "类型", logDesc: "详细说明", logEmpty: "暂无操作日志。"
+      title: "BUYMORE 生产中心", add: "生产输入", result: "生产结果", date: "日期", time: "时间", color: "颜色", shift: "班次", product: "产品", qty: "数量", note: "备注", save: "保存数据", saveMore: "保存并继续", export: "导出 Excel", delete: "删除", day: "白班", night: "夜班", allShift: "所有班次", loading: "同步中...", empty: "没有数据。", incomplete: "数据不完整。", noData: "该条件没有数据。", show: "显示", logout: "登出", enter: "进入系统", total: "总生产量", user: "记录员", navProd: "生产看板", navAnalytics: "数据分析", navOps: "运营中心", navLogs: "操作日志", logTime: "系统时间", logAction: "类型", logDesc: "详细说明", logEmpty: "暂无操作日志。"
     }
   };
   const t = text[language as keyof typeof text];
@@ -2105,17 +2014,10 @@ function ProductionSystem() {
 
   useEffect(() => {
     if (!session?.user?.id) return;
-    if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {});
     const productionChannel = supabase.channel(`realtime-production-${session.user.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "production_data" }, (payload: any) => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "production_data" }, () => {
         if (realtimeTimerRef.current) window.clearTimeout(realtimeTimerRef.current);
         realtimeTimerRef.current = window.setTimeout(() => setProductionRefresh((value) => value + 1), 180);
-        if (payload.eventType === "INSERT" && payload.new?.deleted_at == null) {
-          setNewEntryAlert(`${payload.new.product} - ${payload.new.quantity} Pcs`);
-          try { new Audio("https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3").play().catch(() => {}); } catch { /* audio optional */ }
-          if (document.hidden && "Notification" in window && Notification.permission === "granted") new Notification(t.notif, { body: `${payload.new.product} - ${payload.new.quantity} Pcs` });
-          window.setTimeout(() => setNewEntryAlert(null), 12000);
-        }
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "activity_logs" }, () => {
         if (activeTab === "logs" && logsPage === 0) { setLogsSnapshotId(null); window.setTimeout(() => fetchLogs(true), 100); }
@@ -2132,7 +2034,7 @@ function ProductionSystem() {
       supabase.removeChannel(productionChannel);
       supabase.removeChannel(supportChannel);
     };
-  }, [session?.user?.id, language, activeTab, logsPage]);
+  }, [session?.user?.id, activeTab, logsPage]);
 
   const saveQueue = (next: any[]) => {
     setOfflineQueue(next);
@@ -2388,17 +2290,16 @@ function ProductionSystem() {
           @media print { .full-suite-app-header, .full-suite-statusbar { display: none !important; } }
         `}</style>
 
-        {newEntryAlert && <div className="fixed top-24 right-4 md:right-6 z-[9999] max-w-[calc(100vw-32px)]"><div className="bg-blue-600 text-white px-5 py-3.5 rounded-2xl shadow-2xl border-2 border-white"><p className="text-[9px] font-black uppercase tracking-widest opacity-80">{t.notif}</p><p className="font-bold text-xs md:text-sm truncate">{newEntryAlert}</p></div></div>}
 
         <div className="full-suite-app-header sticky top-0 z-50 bg-white/90 backdrop-blur-xl border-b border-slate-100 shadow-sm">
           <div className="max-w-[1500px] mx-auto px-4 md:px-6 py-4 xl:h-20 flex flex-col xl:flex-row xl:items-center justify-between gap-4">
-            <div className="flex items-center justify-between gap-4 w-full xl:w-auto"><div className="flex items-center gap-3 min-w-0"><div className="w-11 h-11 bg-slate-950 rounded-2xl flex items-center justify-center shadow-xl shrink-0"><span className="text-white font-black text-2xl italic">B</span></div><div className="min-w-0"><h1 className="text-sm md:text-lg font-black text-slate-900 truncate uppercase">{t.title}</h1><div className="flex items-center gap-2"><p className="text-[9px] font-bold text-blue-500 uppercase truncate">{currentUserName(session, profile)}</p><FullSuiteBadge tone={role === "admin" ? "red" : role === "supervisor" ? "violet" : role === "qc" ? "green" : "blue"}>{ROLE_LABELS[role]}</FullSuiteBadge></div></div></div><div className="flex xl:hidden items-center gap-1.5"><NotificationBell session={session} onOpenCenter={() => { setOperationsInitial("notifications"); setActiveTab("operations"); }} /><button onClick={() => setDarkMode((value) => !value)} className="w-10 h-10 rounded-xl bg-slate-100" title="Mode tampilan">{darkMode ? "☀️" : "🌙"}</button><select value={language} onChange={(event) => setLanguage(event.target.value)} className="h-10 bg-slate-100 border border-slate-200 rounded-xl px-2 text-[10px] font-black"><option value="id">ID</option><option value="cn">CN</option></select><button onClick={handleLogout} className="w-10 h-10 rounded-xl bg-red-50 text-red-600 text-sm font-black" title={t.logout}>↪</button></div></div>
+            <div className="flex items-center justify-between gap-4 w-full xl:w-auto"><div className="flex items-center gap-3 min-w-0"><div className="w-11 h-11 bg-slate-950 rounded-2xl flex items-center justify-center shadow-xl shrink-0"><span className="text-white font-black text-2xl italic">B</span></div><div className="min-w-0"><h1 className="text-sm md:text-lg font-black text-slate-900 truncate uppercase">{t.title}</h1><div className="flex items-center gap-2"><p className="text-[9px] font-bold text-blue-500 uppercase truncate">{currentUserName(session, profile)}</p><FullSuiteBadge tone={role === "admin" ? "red" : role === "supervisor" ? "violet" : role === "qc" ? "green" : "blue"}>{ROLE_LABELS[role]}</FullSuiteBadge></div></div></div><div className="flex xl:hidden items-center gap-1.5"><button onClick={() => setDarkMode((value) => !value)} className="w-10 h-10 rounded-xl bg-slate-100" title="Mode tampilan">{darkMode ? "☀️" : "🌙"}</button><select value={language} onChange={(event) => setLanguage(event.target.value)} className="h-10 bg-slate-100 border border-slate-200 rounded-xl px-2 text-[10px] font-black"><option value="id">ID</option><option value="cn">CN</option></select><button onClick={handleLogout} className="w-10 h-10 rounded-xl bg-red-50 text-red-600 text-sm font-black" title={t.logout}>↪</button></div></div>
 
             <div className="flex bg-slate-100 p-1 rounded-xl text-[10px] md:text-xs font-black w-full xl:w-auto overflow-x-auto">
               {[ ["production", t.navProd], ["analytics", t.navAnalytics], ["operations", t.navOps], ["logs", t.navLogs] ].map(([key, label]) => <button key={key} onClick={() => setActiveTab(key)} className={`flex-1 shrink-0 px-4 py-2.5 rounded-lg transition-all ${activeTab === key ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>{label}</button>)}
             </div>
 
-            <div className="hidden xl:flex items-center gap-3"><PresenceIndicator session={session} /><NotificationBell session={session} onOpenCenter={() => { setOperationsInitial("notifications"); setActiveTab("operations"); }} /><button onClick={() => setDarkMode((value) => !value)} className="w-10 h-10 rounded-xl bg-slate-100">{darkMode ? "☀️" : "🌙"}</button><select value={language} onChange={(e) => setLanguage(e.target.value)} className="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-xs font-black"><option value="id">🇮🇩 ID</option><option value="cn">🇨🇳 CN</option></select><button onClick={handleLogout} className="text-[10px] font-black text-red-500 px-3 py-2 rounded-xl hover:bg-red-50">{t.logout}</button></div>
+            <div className="hidden xl:flex items-center gap-3"><PresenceIndicator session={session} /><button onClick={() => setDarkMode((value) => !value)} className="w-10 h-10 rounded-xl bg-slate-100">{darkMode ? "☀️" : "🌙"}</button><select value={language} onChange={(e) => setLanguage(e.target.value)} className="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-xs font-black"><option value="id">🇮🇩 ID</option><option value="cn">🇨🇳 CN</option></select><button onClick={handleLogout} className="text-[10px] font-black text-red-500 px-3 py-2 rounded-xl hover:bg-red-50">{t.logout}</button></div>
           </div>
         </div>
 
@@ -2443,7 +2344,7 @@ function ProductionSystem() {
           </div>}
 
           {activeTab === "analytics" && <AnalyticsPage session={session} language={language} />}
-          {activeTab === "operations" && <OperationsSuitePage session={session} profile={profile} initialModule={operationsInitial} />}
+          {activeTab === "operations" && <OperationsSuitePage session={session} profile={profile} />}
           {activeTab === "logs" && <Card>
             <div className="px-5 md:px-8 py-5 border-b border-slate-100 bg-slate-50/40"><FullSuiteSectionTitle title={t.navLogs} subtitle="Append-only Audit Log dari trigger database; pagination memakai snapshot agar stabil saat log baru masuk." action={<div className="flex flex-wrap gap-2"><input value={logSearch} onChange={(e) => { setLogSearch(e.target.value); setLogsPage(0); setLogsSnapshotId(null); }} placeholder="Cari deskripsi..." className={INPUT_CLASS} /><button onClick={() => { setLogsPage(0); setLogsSnapshotId(null); fetchLogs(true); }} className={SMALL_BUTTON}>Snapshot Baru</button></div>} /></div>
             <div className="md:hidden divide-y divide-slate-100 px-5">{logs.map((log) => <div key={log.id} className="py-4"><div className="flex justify-between gap-3"><span className="font-black text-xs">{log.user_name}</span><span className="text-[9px] font-bold text-slate-400">{formatDateTime(log.created_at)}</span></div><div className="mt-2 flex gap-2 items-start"><FullSuiteBadge tone={log.activity_type === "DELETE" ? "red" : log.activity_type === "INSERT" ? "green" : "blue"}>{log.metadata?.event_subtype || log.activity_type}</FullSuiteBadge><p className="text-xs font-bold text-slate-600 leading-relaxed">{log.description}</p></div></div>)}{!logsLoading && !logs.length && <p className="py-12 text-center text-xs font-bold text-slate-400">{t.logEmpty}</p>}</div>
